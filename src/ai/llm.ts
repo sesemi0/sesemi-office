@@ -30,12 +30,12 @@ export function saveConfig(config: AiConfig): void {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(config)); } catch { /* private mode */ }
 }
 
-export const GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-1.5-flash'];
+export const GEMINI_MODELS = ['gemini-3.5-flash', 'gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.8-flash', 'gemini-flash-latest'];
 export const OPENAI_COMPAT_MODELS = ['gpt-4o-mini', 'gpt-4o', 'glm-4-flash', 'openai/gpt-4o-mini'];
 
 export class AiError extends Error {}
 
-export async function runCompletion(config: AiConfig, system: string, userPrompt: string, maxTokens = 900): Promise<string> {
+export async function runCompletion(config: AiConfig, system: string, userPrompt: string, maxTokens = 2000): Promise<string> {
   if (!config.apiKey.trim()) throw new AiError('کلید API تنظیم نشده است — از بخش «تنظیمات» کلیدت را وارد کن.');
   const key = config.apiKey.trim();
   if (config.provider === 'gemini') {

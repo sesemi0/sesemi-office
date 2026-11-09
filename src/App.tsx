@@ -137,7 +137,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       <h2>تنظیمات هوش مصنوعی (کلید خودت)</h2>
       <p className="hint">کلید فقط در همین مرورگر خودت ذخیره می‌شود و فقط به سرویس‌دهنده‌ای که انتخاب می‌کنی فرستاده می‌شود.</p>
       <label className="field">سرویس‌دهنده
-        <select value={config.provider} onChange={e => setConfig({ ...config, provider: e.target.value as ProviderKind, model: e.target.value === 'gemini' ? 'gemini-2.0-flash' : 'gpt-4o-mini' })}>
+        <select value={config.provider} onChange={e => setConfig({ ...config, provider: e.target.value as ProviderKind, model: e.target.value === 'gemini' ? 'gemini-3.5-flash' : 'gpt-4o-mini' })}>
           <option value="gemini">گوگل Gemini (پلن رایگان دارد)</option>
           <option value="openai-compat">هر سرویس OpenAI-compatible (OpenAI / OpenRouter / GLM…)</option>
         </select>
@@ -160,7 +160,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
           {saved ? 'ذخیره شد ✓' : 'ذخیره'}
         </button>
       </div>
-      <p className="hint">کلید رایگان Gemini را از aistudio.google.com می‌گیری — بدون کارت بانکی.</p>
+      <p className="hint">کلید رایگان Gemini را از aistudio.google.com می‌گیری — بدون کارت بانکی. مدل پیشنهادی: gemini-3.5-flash.</p>
       <p className="hint">وظایف در حال اجرا با تغییر تنظیمات قطع نمی‌شوند؛ وظیفهٔ بعدی با کلید جدید می‌رود.</p>
     </div>
   </div>;
