@@ -1,0 +1,15 @@
+{
+  "name": "دفتر سسِمی",
+  "short_name": "دفتر سسِمی",
+  "description": "شبیه‌ساز دفتر شرکت با ایجنت‌های هوش مصنوعی که واقعاً کار می‌کنند",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0b1220",
+  "theme_color": "#0b1220",
+  "dir": "rtl",
+  "lang": "fa",
+  "icons": [
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "192x192 256x256 384x384 512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
