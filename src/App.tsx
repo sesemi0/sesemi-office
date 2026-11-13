@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { store, type OfficeState } from './officeStore';
-import { fitCamera, render, type Camera } from './render/officeCanvas';
+import { cameraCtl, initCamera, panBy, pickAgent, render, setFollow, stepEffects, zoomAt } from './render/officeCanvas';
 import { ROLE_META, TASK_LABELS, type Agent, type Role, type Task, type TaskKind } from './sim/agents';
 import { loadConfig, saveConfig, GEMINI_MODELS, OPENAI_COMPAT_MODELS, type AiConfig, type ProviderKind } from './ai/llm';
 
@@ -25,13 +25,33 @@ function timeOf(at: number): string {
   return new Date(at).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
 }
 
+/** one-tap task presets per role — the minimal way to keep the office busy */
+const QUICK_TASKS: Record<Role, { label: string; kind: TaskKind; detail: string }[]> = {
+  manager: [
+    { label: 'گزارش روزانه', kind: 'research', detail: 'گزارش روزانهٔ وضعیت تیم و پروژه‌های در جریان استودیو را تهیه کن.' },
+    { label: 'برنامهٔ هفته', kind: 'schedule', detail: 'برنامهٔ هفتهٔ آیندهٔ تیم را با اولویت‌ها بچین.' },
+  ],
+  writer: [
+    { label: 'کپشن اینستاگرام', kind: 'content', detail: 'یک کپشن کوتاه و جذاب اینستاگرام برای استودیو طراحی سایت سسِمی بنویس.' },
+    { label: 'پست لینکدین', kind: 'content', detail: 'یک پست حرفه‌ای لینکدین دربارهٔ اهمیت طراحی وب مدرن برای کسب‌وکارها بنویس.' },
+  ],
+  researcher: [
+    { label: 'تحلیل رقبا', kind: 'research', detail: 'تحقیق کوتاهی دربارهٔ رقبا در بازار طراحی وب و تفاوت‌های سسِمی بنویس.' },
+    { label: 'ترندهای AI', kind: 'research', detail: 'مهم‌ترین ترندهای هوش مصنوعی این ماه برای کسب‌وکارهای کوچک را خلاصه کن.' },
+  ],
+  assistant: [
+    { label: 'برنامهٔ فردا', kind: 'schedule', detail: 'برنامهٔ کاری فردای تیم را با ساعت‌ها بچین.' },
+    { label: 'ایمیل پیگیری', kind: 'email', detail: 'یک ایمیل پیگیری مؤدبانه برای مشتری که مدتی بی‌پاسخ مانده بنویس.' },
+  ],
+};
+
 /* ---------- panels ---------- */
 
-function AgentsPanel({ state, onPick }: { state: OfficeState; onPick: (id: string) => void }) {
+function AgentsPanel({ state }: { state: OfficeState }) {
   return <div className="panel">
-    <h2>تیم دفتر <span className="panel-hint">{state.agents.length} ایجنت</span></h2>
+    <h2>تیم دفتر <span className="panel-hint">{state.agents.length} ایجنت — برای شخصی‌سازی روی هرکدام بزن</span></h2>
     <div className="agent-list">
-      {state.agents.map(agent => <button className="agent-row" key={agent.id} onClick={() => onPick(agent.id)}>
+      {state.agents.map(agent => <button className="agent-row" key={agent.id} onClick={() => (window as unknown as { __openAgent: (id: string) => void }).__openAgent(agent.id)}>
         <Avatar agent={agent} />
         <span className="agent-row-name">
           <strong>{agent.name}</strong>
@@ -103,6 +123,17 @@ function FeedPanel({ state }: { state: OfficeState }) {
   </div>;
 }
 
+function ResultActions({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const share = async () => {
+    if (navigator.share) { try { await navigator.share({ title: 'نتیجهٔ ایجنت سسِمی', text }); return; } catch { /* cancelled */ } }
+    try { await navigator.clipboard.writeText(text); setCopied(true); window.setTimeout(() => setCopied(false), 1500); } catch { /* blocked */ }
+  };
+  return <div className="result-actions">
+    <button className="ghost" onClick={share}>{copied ? 'کپی شد ✓' : 'کپی / اشتراک'}</button>
+  </div>;
+}
+
 function TaskResult({ task, agent }: { task: Task; agent?: Agent }) {
   const [open, setOpen] = useState(false);
   return <div className={`task-row ${task.status}`}>
@@ -115,6 +146,7 @@ function TaskResult({ task, agent }: { task: Task; agent?: Agent }) {
     </div>
     <p className="task-detail">{task.detail}</p>
     {task.result && open && <div className="task-result">{task.result}</div>}
+    {task.result && open && <ResultActions text={task.result} />}
     {task.result && <button className="ghost" onClick={() => setOpen(!open)}>{open ? 'بستن نتیجه' : 'دیدن نتیجه'}</button>}
   </div>;
 }
@@ -128,6 +160,45 @@ function TasksPanel({ state }: { state: OfficeState }) {
     </div>
   </div>;
 }
+
+/* ---------- selected-agent glass card ---------- */
+
+function AgentCard({ state, agentId, onClose }: { state: OfficeState; agentId: string; onClose: () => void }) {
+  const agent = state.agents.find(a => a.id === agentId);
+  const [following, setFollowing] = useState(cameraCtl.followId === agentId);
+  if (!agent) return null;
+  const lastTask = state.tasks.filter(t => t.agentId === agentId).sort((a, b) => b.createdAt - a.createdAt)[0];
+  const presets = QUICK_TASKS[agent.role];
+  return <div className="agent-card">
+    <div className="agent-card-head">
+      <Avatar agent={agent} size={40} />
+      <div className="agent-card-id">
+        <strong>{agent.name}</strong>
+        <span>{ROLE_META[agent.role].label} · <StatusDot state={agent.state} /> {STATE_LABELS[agent.state]}</span>
+      </div>
+      <button className="ghost card-close" onClick={onClose} aria-label="بستن">✕</button>
+    </div>
+    {lastTask && <div className="agent-card-task">
+      <span className="task-title">{lastTask.title}</span>
+      <span className="task-meta">
+        {lastTask.status === 'done' ? 'انجام شد ✓' : lastTask.status === 'failed' ? 'ناموفق ✗' : lastTask.status === 'working' ? 'در حال کار…' : lastTask.status === 'walking' ? 'در راه…' : 'در صف…'}
+      </span>
+      {lastTask.result && lastTask.status === 'done' && <p className="agent-card-preview">{lastTask.result.slice(0, 220)}{lastTask.result.length > 220 ? '…' : ''}</p>}
+      {lastTask.result && lastTask.status === 'done' && <ResultActions text={lastTask.result} />}
+    </div>}
+    <div className="chips">
+      {presets.map(p => <button key={p.label} className="chip" onClick={() => store.assign(agent.id, p.kind, p.label, p.detail)}>+ {p.label}</button>)}
+    </div>
+    <div className="agent-card-actions">
+      <button className="ghost" onClick={() => { const next = !following; setFollowing(next); setFollow(next ? agent.id : null); }}>
+        {following ? 'توقف دوربین' : 'دنبال‌کردن با دوربین'}
+      </button>
+      <button className="ghost" onClick={() => (window as unknown as { __openAgent: (id: string) => void }).__openAgent(agent.id)}>شخصی‌سازی</button>
+    </div>
+  </div>;
+}
+
+/* ---------- modals ---------- */
 
 function SettingsModal({ onClose }: { onClose: () => void }) {
   const [config, setConfig] = useState<AiConfig>(() => loadConfig());
@@ -209,34 +280,112 @@ function AgentEditModal({ agent, onClose }: { agent: Agent; onClose: () => void 
 
 export default function App() {
   const [state, setState] = useState(() => store.state);
-  const [tab, setTab] = useState<'tasks' | 'agents' | 'feed' | 'team'>('tasks');
+  const [tab, setTab] = useState<'tasks' | 'team' | 'feed' | 'agents'>('tasks');
   const [showSettings, setShowSettings] = useState(false);
-  const [editing, setEditing] = useState<Agent | null>(null);
-  const [pickedId, setPickedId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [zen, setZen] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => store.subscribe(() => setState({ ...store.state })), []);
   useEffect(() => { store.start(); return () => store.stop(); }, []);
+
+  // expose the edit-modal opener for panels (avoids prop drilling)
+  useEffect(() => {
+    (window as unknown as { __openAgent: (id: string) => void }).__openAgent = (id: string) => setEditingId(id);
+  }, []);
+
+  // camera + render loop
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const resize = () => {
       canvas.width = canvas.clientWidth * devicePixelRatio;
       canvas.height = canvas.clientHeight * devicePixelRatio;
+      cameraCtl.dpr = devicePixelRatio;
+      cameraCtl.cssW = canvas.clientWidth;
+      cameraCtl.cssH = canvas.clientHeight;
     };
     resize();
+    initCamera(canvas);
     window.addEventListener('resize', resize);
-    const cam = fitCamera(canvas);
-    (window as unknown as { __office: object }).__office = { cam, canvasW: canvas.width, canvasH: canvas.height, cssW: canvas.clientWidth };
-    let raf = 0;
-    const loop = (now: number) => { render(canvas, store.state.agents, cam, now); raf = requestAnimationFrame(loop); };
+    let raf = 0, last = 0;
+    const loop = (now: number) => {
+      const dt = last ? Math.min((now - last) / 1000, .06) : .016;
+      last = now;
+      stepEffects(dt);
+      render(canvas, store.state.agents, now);
+      (window as unknown as { __office?: object }).__office = { hits: cameraCtl.hits }; // live pick areas (diagnostics)
+      raf = requestAnimationFrame(loop);
+    };
     raf = requestAnimationFrame(loop);
     return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); };
   }, []);
 
-  const picked = state.agents.find(a => a.id === pickedId) ?? null;
+  // pointer interactions: drag-pan, pinch-zoom, tap-select, wheel-zoom
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const pointers = new Map<number, { x: number; y: number }>();
+    let moved = 0, lastPinch = 0;
+    const pos = (e: PointerEvent) => {
+      const r = canvas.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    };
+    const down = (e: PointerEvent) => {
+      try { canvas.setPointerCapture(e.pointerId); } catch { /* synthetic/inactive pointer — harmless */ }
+      pointers.set(e.pointerId, pos(e));
+      if (pointers.size === 1) moved = 0;
+    };
+    const move = (e: PointerEvent) => {
+      const p = pos(e);
+      const prev = pointers.get(e.pointerId);
+      if (!prev) return;
+      if (pointers.size >= 2) {
+        pointers.set(e.pointerId, p);
+        const [a, b] = [...pointers.values()];
+        const dist = Math.hypot(a.x - b.x, a.y - b.y);
+        if (lastPinch) zoomAt((a.x + b.x) / 2, (a.y + b.y) / 2, dist / lastPinch);
+        lastPinch = dist;
+        moved = 99;
+      } else {
+        moved += Math.abs(p.x - prev.x) + Math.abs(p.y - prev.y);
+        if (moved > 6) { panBy(p.x - prev.x, p.y - prev.y); moved = Math.max(moved, 7); }
+        pointers.set(e.pointerId, p);
+      }
+    };
+    const up = (e: PointerEvent) => {
+      if (pointers.size === 1 && moved <= 6) {
+        const p = pos(e);
+        const id = pickAgent(p.x, p.y);
+        setSelectedId(id);
+      }
+      pointers.delete(e.pointerId);
+      lastPinch = 0;
+    };
+    const wheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const r = canvas.getBoundingClientRect();
+      zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.12 : 1 / 1.12);
+    };
+    canvas.addEventListener('pointerdown', down);
+    canvas.addEventListener('pointermove', move);
+    canvas.addEventListener('pointerup', up);
+    canvas.addEventListener('pointercancel', up);
+    canvas.addEventListener('wheel', wheel, { passive: false });
+    return () => {
+      canvas.removeEventListener('pointerdown', down);
+      canvas.removeEventListener('pointermove', move);
+      canvas.removeEventListener('pointerup', up);
+      canvas.removeEventListener('pointercancel', up);
+      canvas.removeEventListener('wheel', wheel);
+    };
+  }, []);
 
-  return <div className="app-shell">
+  const editing = state.agents.find(a => a.id === editingId) ?? null;
+  const workingCount = state.agents.filter(a => a.state === 'working').length;
+
+  return <div className={`app-shell ${zen ? 'zen' : ''}`}>
     <header className="topbar">
       <div className="brand-row">
         <img src="/icons/icon-512.png" alt="" width={30} height={30} />
@@ -244,11 +393,15 @@ export default function App() {
         <span className="brand-hint">شبیه‌ساز شرکت هوشمند</span>
       </div>
       <div className="topbar-actions">
+        <button className="ghost" onClick={() => setZen(true)} aria-label="حالت تمرکز">⛶</button>
         <button className="ghost" onClick={() => setShowSettings(true)}>⚙️ تنظیمات AI</button>
       </div>
     </header>
 
-    <div className="office-wrap"><canvas ref={canvasRef} className="office-canvas" /></div>
+    <div className="office-wrap">
+      <canvas ref={canvasRef} className="office-canvas" />
+      {selectedId && <AgentCard state={state} agentId={selectedId} onClose={() => { setSelectedId(null); setFollow(null); }} />}
+    </div>
 
     <div className="side-col">
       <nav className="tabbar">
@@ -258,13 +411,20 @@ export default function App() {
 
       <main className="panel-area">
         {tab === 'tasks' && <TaskForm state={state} />}
-        {tab === 'team' && <AgentsPanel state={state} onPick={id => setEditing(state.agents.find(a => a.id === id) ?? null)} />}
+        {tab === 'team' && <AgentsPanel state={state} />}
         {tab === 'feed' && <FeedPanel state={state} />}
         {tab === 'agents' && <TasksPanel state={state} />}
       </main>
     </div>
 
+    {zen && <div className="zen-hud">
+      <span className="zen-pill">
+        <span className="live-dot" /> {workingCount} ایجنت در حال کار · {new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}
+      </span>
+      <button className="ghost" onClick={() => setZen(false)}>خروج از حالت تمرکز</button>
+    </div>}
+
     {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
-    {editing && <AgentEditModal agent={editing} onClose={() => setEditing(null)} />}
+    {editing && <AgentEditModal agent={editing} onClose={() => setEditingId(null)} />}
   </div>;
 }

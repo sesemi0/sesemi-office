@@ -2,6 +2,8 @@
  * Isometric canvas renderer — draws the office, furniture, and agents.
  * Screen position of tile (x,y): sx = (x - y) * TILE_W/2, sy = (x + y) * TILE_H/2.
  * Everything is procedural (no image assets) so the whole office ships as code.
+ * Modern layer: live camera (zoom/pan/follow), day-night lighting from the real
+ * clock, and work particles rising from typing monitors.
  */
 import { MAP, MAP_H, MAP_W, SPOTS, type Vec2 } from '../sim/world';
 import type { Agent } from '../sim/agents';
@@ -22,20 +24,91 @@ const ACCENT = '#53b9fb';
 
 export interface Camera { panX: number; panY: number; scale: number }
 
-export function fitCamera(canvas: HTMLCanvasElement): Camera {
+/* ---------- live camera + interaction state ---------- */
+
+export const cameraCtl = {
+  cam: { panX: 0, panY: 0, scale: 1 } as Camera,
+  followId: null as string | null,
+  /** screen-space hit areas, refreshed every frame by drawAgent */
+  hits: [] as { id: string; x: number; feetY: number; scale: number }[],
+  particles: [] as { x: number; y: number; vx: number; vy: number; life: number; hue: string }[],
+  dpr: 1,
+  cssW: 0,
+  cssH: 0,
+};
+
+export function initCamera(canvas: HTMLCanvasElement): void {
+  cameraCtl.dpr = canvas.width / Math.max(1, canvas.clientWidth);
+  cameraCtl.cssW = canvas.clientWidth;
+  cameraCtl.cssH = canvas.clientHeight;
+  cameraCtl.cam = fitCamera(canvas.clientWidth, canvas.clientHeight);
+}
+
+export function zoomAt(canvasX: number, canvasY: number, factor: number): void {
+  const cam = cameraCtl.cam;
+  const next = Math.min(2.6, Math.max(.45, cam.scale * factor));
+  const wx = (canvasX - cam.panX) / cam.scale;
+  const wy = (canvasY - cam.panY) / cam.scale;
+  cam.panX = canvasX - wx * next;
+  cam.panY = canvasY - wy * next;
+  cam.scale = next;
+  if (factor !== 1) cameraCtl.followId = null; // manual zoom cancels follow
+}
+
+export function panBy(dx: number, dy: number): void {
+  cameraCtl.cam.panX += dx;
+  cameraCtl.cam.panY += dy;
+  cameraCtl.followId = null; // manual pan cancels follow
+}
+
+export function pickAgent(canvasX: number, canvasY: number): string | null {
+  // capsule test covering the WHOLE sprite: from just above the name tag to
+  // the feet, wide enough for the body — a natural tap anywhere on the
+  // character selects them
+  let best: { id: string; d: number } | null = null;
+  for (const hit of cameraCtl.hits) {
+    const halfW = 20 * hit.scale + 12;
+    const top = hit.feetY - 64 * hit.scale - 12;
+    const bottom = hit.feetY + 10;
+    if (canvasX >= hit.x - halfW && canvasX <= hit.x + halfW && canvasY >= top && canvasY <= bottom) {
+      const d = Math.hypot(hit.x - canvasX, (hit.feetY - 30 * hit.scale) - canvasY);
+      if (!best || d < best.d) best = { id: hit.id, d };
+    }
+  }
+  return best?.id ?? null;
+}
+
+export function setFollow(id: string | null): void {
+  cameraCtl.followId = id;
+}
+
+function fitCamera(cssW: number, cssH: number): Camera {
   // true bounds of the rotated diamond: extreme corners are (0,H-1), (W-1,0)
   const left = isoOf(0, MAP_H - 1).x - TILE_W / 2;
   const right = isoOf(MAP_W - 1, 0).x + TILE_W / 2;
   const bottom = isoOf(MAP_W - 1, MAP_H - 1).y + TILE_H;
   const contentW = right - left;
   const contentH = bottom + 120;
-  const scale = Math.min((canvas.width - 24) / contentW, (canvas.height - 24) / contentH);
+  const scale = Math.min((cssW - 24) / contentW, (cssH - 24) / contentH);
   return {
     scale,
-    panX: canvas.width / 2 - ((left + right) / 2) * scale,
-    panY: canvas.height / 2 - (bottom / 2) * scale - 20,
+    panX: cssW / 2 - ((left + right) / 2) * scale,
+    panY: cssH / 2 - (bottom / 2) * scale - 20,
   };
 }
+
+/* ---------- day-night ambience (real clock) ---------- */
+
+interface Ambience { phase: 'day' | 'morning' | 'evening' | 'night'; tint: string; lamps: boolean }
+function ambienceNow(): Ambience {
+  const h = new Date().getHours() + new Date().getMinutes() / 60;
+  if (h >= 6.5 && h < 10) return { phase: 'morning', tint: 'rgba(255,196,120,.10)', lamps: false };
+  if (h >= 10 && h < 17) return { phase: 'day', tint: 'transparent', lamps: false };
+  if (h >= 17 && h < 19.5) return { phase: 'evening', tint: 'rgba(64,42,110,.28)', lamps: true };
+  return { phase: 'night', tint: 'rgba(8,14,40,.52)', lamps: true };
+}
+
+/* ---------- drawing ---------- */
 
 function tilePath(ctx: CanvasRenderingContext2D, sx: number, sy: number): void {
   ctx.beginPath();
@@ -61,6 +134,17 @@ function drawAgent(ctx: CanvasRenderingContext2D, agent: Agent, cam: Camera, now
   }
   const x = px * cam.scale + cam.panX;
   const y = py * cam.scale + cam.panY;
+
+  cameraCtl.hits.push({ id: agent.id, x, feetY: y, scale: cam.scale });
+
+  // work particles rise from the monitor while the real AI is running
+  if (agent.state === 'working' && cameraCtl.particles.length < 90 && Math.random() < .35) {
+    cameraCtl.particles.push({
+      x: x + (agent.facing === 1 ? -14 : 14) * cam.scale, y: y - 30 * cam.scale,
+      vx: (Math.random() - .5) * .35, vy: -(.5 + Math.random() * .5), life: 1,
+      hue: Math.random() < .5 ? '#9fdcff' : ACCENT,
+    });
+  }
 
   // shadow
   ctx.save();
@@ -112,6 +196,11 @@ function drawAgent(ctx: CanvasRenderingContext2D, agent: Agent, cam: Camera, now
   const w = ctx.measureText(tag).width + 12;
   ctx.beginPath(); ctx.roundRect(x - w / 2, y - 62 * s + bob, w, 17 * s, 8); ctx.fill();
   ctx.fillStyle = body; ctx.fillText(tag, x, y - 49 * s + bob);
+  // selected ring
+  if (cameraCtl.followId === agent.id) {
+    ctx.strokeStyle = ACCENT; ctx.lineWidth = 2 * s;
+    ctx.beginPath(); ctx.ellipse(x, y - 4 * s, 22 * s, 11 * s, 0, 0, Math.PI * 2); ctx.stroke();
+  }
   // speech bubble
   if (agent.bubble) {
     ctx.font = `${Math.max(10, 11.5 * s)}px Vazirmatn, sans-serif`;
@@ -150,10 +239,26 @@ function drawDesk(ctx: CanvasRenderingContext2D, spot: (typeof SPOTS)[number], i
   ctx.fillRect(x - 2, y - 3, 4, 3);
 }
 
-export function render(canvas: HTMLCanvasElement, agents: Agent[], cam: Camera, now: number): void {
+export function render(canvas: HTMLCanvasElement, agents: Agent[], now: number): void {
   const ctx = canvas.getContext('2d')!;
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const cam = cameraCtl.cam;
+
+  // smooth follow of the selected agent
+  if (cameraCtl.followId) {
+    const agent = agents.find(a => a.id === cameraCtl.followId);
+    if (agent) {
+      const p = isoOf(agent.from.x + (agent.to.x - agent.from.x) * (agent.state === 'walking' ? agent.moveT : 1),
+        agent.from.y + (agent.to.y - agent.from.y) * (agent.state === 'walking' ? agent.moveT : 1));
+      const targetX = cameraCtl.cssW / 2 - p.x * cam.scale;
+      const targetY = cameraCtl.cssH / 2 - p.y * cam.scale + 40;
+      cam.panX += (targetX - cam.panX) * .1;
+      cam.panY += (targetY - cam.panY) * .1;
+    }
+  }
+
+  ctx.setTransform(cameraCtl.dpr, 0, 0, cameraCtl.dpr, 0, 0);
+  ctx.clearRect(0, 0, cameraCtl.cssW, cameraCtl.cssH);
+  cameraCtl.hits = [];
   ctx.save();
   ctx.translate(cam.panX, cam.panY);
   ctx.scale(cam.scale, cam.scale);
@@ -220,4 +325,44 @@ export function render(canvas: HTMLCanvasElement, agents: Agent[], cam: Camera, 
   const ordered = [...agents].sort((a, b) => (a.pos.x + a.pos.y) - (b.pos.x + b.pos.y));
   ctx.restore();
   for (const agent of ordered) drawAgent(ctx, agent, cam, now);
+
+  // work particles (screen space, post-restore)
+  ctx.save();
+  for (const p of cameraCtl.particles) {
+    ctx.globalAlpha = Math.max(0, p.life) * .8;
+    ctx.fillStyle = p.hue;
+    ctx.beginPath(); ctx.roundRect(p.x, p.y, 3, 3, 1.5); ctx.fill();
+  }
+  ctx.restore();
+
+  // day-night ambience: tint + warm desk lamps at evening/night
+  const amb = ambienceNow();
+  if (amb.tint !== 'transparent') {
+    ctx.fillStyle = amb.tint;
+    ctx.fillRect(0, 0, cameraCtl.cssW, cameraCtl.cssH);
+  }
+  if (amb.lamps) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const spot of SPOTS) {
+      if (!spot.id.startsWith('desk')) continue;
+      const p = isoOf(spot.x, spot.y);
+      const gx = p.x * cam.scale + cam.panX;
+      const gy = p.y * cam.scale + cam.panY - 14 * cam.scale;
+      const g = ctx.createRadialGradient(gx, gy, 2, gx, gy, 60 * cam.scale);
+      g.addColorStop(0, 'rgba(255,190,110,.34)');
+      g.addColorStop(1, 'rgba(255,190,110,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(gx, gy, 60 * cam.scale, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
+/** advance particles + prune dead ones (called from the same rAF loop) */
+export function stepEffects(dt: number): void {
+  for (const p of cameraCtl.particles) {
+    p.x += p.vx * dt * 60; p.y += p.vy * dt * 60; p.life -= dt * .9;
+  }
+  cameraCtl.particles = cameraCtl.particles.filter(p => p.life > 0);
 }
