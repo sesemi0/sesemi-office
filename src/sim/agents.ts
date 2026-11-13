@@ -67,7 +67,14 @@ export interface Task {
   result?: string;
   createdAt: number;
   finishedAt?: number;
+  demo?: boolean;            // true = خروجی نمایشی (بدون کلید API)
+  isDelegation?: boolean;    // true = والدِ تخصیص مدیریتی (آرش) — هرگز AI/demo نمی‌گیرد
+  delegationId?: string;     // روی فرزند: id والد
+  routeReason?: string;      // متن فارسی دلیل انتخاب این ایجنت، برای UI
 }
+
+/** خروجی تخصیص مدیریتی: id وظیفهٔ والد (آرش) + فرزندان ساخته‌شده */
+export interface DelegationResult { delegationId: string; children: Task[] }
 
 export interface ActivityEvent { id: string; at: number; agentId?: string; text: string }
 
@@ -82,10 +89,89 @@ export function routeToSpot(agent: Agent, spotId: string, occupied: Set<number>)
   const goal = spotApproach(spot, occupied);
   if (!goal) return false;
   const path = findPath(agent.pos, goal);
-  if (!path || !path.length) { agent.pos = goal; agent.from = goal; agent.to = goal; agent.path = []; return true; }
+  // teleport (مسیر خالی/null) — moveT هم باید ۱ باشد وگرنه بررسی رسیدن در tick
+  // هرگز فعال نمی‌شود و ایجنت برای همیشه در walking قفل می‌ماند
+  if (!path || !path.length) { agent.pos = goal; agent.from = goal; agent.to = goal; agent.path = []; agent.moveT = 1; return true; }
   agent.path = path;
   agent.from = { ...agent.pos };
   agent.to = { ...path[0] };
   agent.moveT = 0;
   return true;
+}
+
+/* ---- بریف‌کلاسیفایر و انتخاب ایجنتِ تخصیص‌دهنده (pure، بدون وابستگی به استور) ---- */
+
+/** کلیدواژه‌های طبقه‌بندی بریف — وزن هر کلمه دقیقاً ۱ است؛ تکرار هم می‌شمارد. */
+export const BRIEF_KEYWORDS: Record<TaskKind, string[]> = {
+  email: ['ایمیل', 'مکاتبه', 'پاسخ', 'پیگیری', 'مشتری', 'مذاکره'],
+  content: ['محتوا', 'کپشن', 'پست', 'مقاله', 'متن', 'اینستاگرام', 'لینکدین'],
+  research: ['تحقیق', 'گزارش', 'تحلیل', 'رقبا', 'ترند', 'بازار', 'مطالعه'],
+  schedule: ['برنامه', 'زمان', 'تقویم', 'اولویت', 'جلسهٔ', 'وقت‌بندی'],
+};
+
+/** تعداد تکرارهای زیررشته‌ای غیرهم‌پوشان (هر تکرار ۱ امتیاز — مشتق‌های فارسی مثل «ایمیل‌ها» هم match می‌شوند). */
+function countOccurrences(haystack: string, needle: string): number {
+  if (!needle) return 0;
+  let count = 0;
+  let idx = haystack.indexOf(needle);
+  while (idx !== -1) {
+    count++;
+    idx = haystack.indexOf(needle, idx + needle.length);
+  }
+  return count;
+}
+
+/** کلید تاریخ محلی به شکل YYYY-MM-DD (برای شمارش doneهای امروز). */
+function localDateKey(ts: number): string {
+  const d = new Date(ts);
+  const m = `${d.getMonth() + 1}`.padStart(2, '0');
+  const day = `${d.getDate()}`.padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+/**
+ * برترین kindهای متن بریف بر اساس شمارش تکرار کلیدواژه‌ها (تطابق زیررشته‌ای،
+ * وزن هر تطابق دقیقاً ۱ — بدون هیچ وزن غیر-۱). خروجی مرتب نزولی بر score،
+ * فقط kindهای score>0؛ اگر همهٔ scoreها صفر → [{kind:'research', score:1}].
+ */
+export function classifyBrief(detail: string): { kind: TaskKind; score: number }[] {
+  const ranked = (Object.keys(BRIEF_KEYWORDS) as TaskKind[])
+    .map(kind => {
+      let score = 0;
+      for (const keyword of BRIEF_KEYWORDS[kind]) score += countOccurrences(detail, keyword);
+      return { kind, score };
+    })
+    .filter(entry => entry.score > 0)
+    .sort((a, b) => b.score - a.score);
+  if (!ranked.length) return [{ kind: 'research', score: 1 }];
+  return ranked;
+}
+
+/**
+ * بهترین ایجنت برای kind داده‌شده:
+ * - کاندیدها = ایجنت‌های role !== 'manager' که ROLE_META[role].tasks.includes(kind)؛
+ * - اگر خالی → همان فیلتر با manager مجاز؛ اگر باز هم خالی → null (فرزند برای آن kind ساخته نمی‌شود).
+ * - رتبه‌بندی قطعی: شمار وظایف فعال (queued/walking/working) صعودی، سپس doneهای امروز صعودی،
+ *   سپس جایگاه در آرایه.
+ */
+export function chooseDelegatee(kind: TaskKind, agents: Agent[], tasks: Task[]): Agent | null {
+  const today = localDateKey(Date.now());
+  const metrics = (agent: Agent) => ({
+    active: tasks.filter(t => t.agentId === agent.id
+      && (t.status === 'queued' || t.status === 'walking' || t.status === 'working')).length,
+    doneToday: tasks.filter(t => t.agentId === agent.id && t.status === 'done'
+      && localDateKey(t.createdAt) === today).length,
+    index: agents.indexOf(agent),
+  });
+  const poolFor = (allowManager: boolean) =>
+    agents.filter(a => (allowManager || a.role !== 'manager') && ROLE_META[a.role].tasks.includes(kind));
+  const pool = poolFor(false).length ? poolFor(false) : poolFor(true);
+  if (!pool.length) return null;
+  return [...pool].sort((a, b) => {
+    const ma = metrics(a);
+    const mb = metrics(b);
+    if (ma.active !== mb.active) return ma.active - mb.active;
+    if (ma.doneToday !== mb.doneToday) return ma.doneToday - mb.doneToday;
+    return ma.index - mb.index;
+  })[0];
 }

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { store, type OfficeState } from './officeStore';
-import { cameraCtl, initCamera, panBy, pickAgent, render, setFollow, stepEffects, zoomAt } from './render/officeCanvas';
+import { cameraCtl, fitCamera, initCamera, panBy, pickAgent, render, setFollow, stepEffects, zoomAt } from './render/officeCanvas';
 import { ROLE_META, TASK_LABELS, type Agent, type Role, type Task, type TaskKind } from './sim/agents';
-import { loadConfig, saveConfig, GEMINI_MODELS, OPENAI_COMPAT_MODELS, type AiConfig, type ProviderKind } from './ai/llm';
+import { isDemoMode, loadConfig, saveConfig, GEMINI_MODELS, OPENAI_COMPAT_MODELS, type AiConfig, type ProviderKind } from './ai/llm';
 
 /* ---------- small shared bits ---------- */
 
@@ -65,11 +65,13 @@ function AgentsPanel({ state }: { state: OfficeState }) {
 
 function TaskForm({ state }: { state: OfficeState }) {
   const [agentId, setAgentId] = useState(state.agents[0]?.id ?? '');
+  const [toManager, setToManager] = useState(false);
   const [kind, setKind] = useState<TaskKind>('email');
   const [title, setTitle] = useState('');
   const [detail, setDetail] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [ok, setOk] = useState('');
 
   useEffect(() => {
     if (!state.agents.some(a => a.id === agentId)) setAgentId(state.agents[0]?.id ?? '');
@@ -78,9 +80,14 @@ function TaskForm({ state }: { state: OfficeState }) {
   function submit() {
     if (busy) return;
     if (!detail.trim()) { setError('چیزی برای ایجنت بنویس (خواستهٔ خودت).'); return; }
-    setBusy(true); setError('');
+    setBusy(true); setError(''); setOk('');
     try {
-      store.assign(agentId, kind, title, detail);
+      if (toManager) {
+        const result = store.assignToManager(title, detail);
+        setOk(`آرش وظیفه را بین ${result.children.length} نفر توزیع کرد.`);
+      } else {
+        store.assign(agentId, kind, title, detail);
+      }
       setTitle(''); setDetail('');
     } catch (e) { setError(e instanceof Error ? e.message : 'خطا'); }
     setBusy(false);
@@ -88,16 +95,21 @@ function TaskForm({ state }: { state: OfficeState }) {
 
   return <div className="panel">
     <h2>دادن وظیفه</h2>
+    <div className="recip-switch" role="radiogroup" aria-label="گیرندهٔ وظیفه">
+      <button type="button" className={toManager ? '' : 'on'} onClick={() => setToManager(false)}>ایجنت مشخص</button>
+      <button type="button" className={toManager ? 'on' : ''} onClick={() => setToManager(true)}>آرش — تخصیص خودکار</button>
+    </div>
     <label className="field">ایجنت
-      <select value={agentId} onChange={e => setAgentId(e.target.value)}>
+      <select value={agentId} disabled={toManager} onChange={e => setAgentId(e.target.value)}>
         {state.agents.map(a => <option key={a.id} value={a.id}>{a.name} — {ROLE_META[a.role].label}</option>)}
       </select>
     </label>
-    <label className="field">نوع کار
+    {toManager && <small className="field-hint">آرش بر اساس نوع کار بین تیم تقسیم می‌کند.</small>}
+    {!toManager && <label className="field">نوع کار
       <select value={kind} onChange={e => setKind(e.target.value as TaskKind)}>
         {Object.entries(TASK_LABELS).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
       </select>
-    </label>
+    </label>}
     <label className="field">عنوان <small>اختیاری</small>
       <input value={title} onChange={e => setTitle(e.target.value)} placeholder="مثلاً: پاسخ به درخواست قیمت" />
     </label>
@@ -106,7 +118,8 @@ function TaskForm({ state }: { state: OfficeState }) {
         placeholder="مثلاً: به مشتری که سفارش طراحی سایت پرسیده، یک پاسخ گرم با اشاره به زمان‌بندی بنویس" />
     </label>
     {error && <p className="form-error" role="alert">{error}</p>}
-    <button className="primary" onClick={submit} disabled={busy}>سپردن وظیفه به ایجنت</button>
+    {ok && <p className="form-ok" role="status">{ok}</p>}
+    <button className="primary" onClick={submit} disabled={busy}>{toManager ? 'سپردن بریف به آرش' : 'سپردن وظیفه به ایجنت'}</button>
   </div>;
 }
 
@@ -134,17 +147,34 @@ function ResultActions({ text }: { text: string }) {
   </div>;
 }
 
-function TaskResult({ task, agent }: { task: Task; agent?: Agent }) {
+function TaskResult({ task, agent, agents = [], delegationKids = [] }: {
+  task: Task; agent?: Agent; agents?: Agent[]; delegationKids?: Task[];
+}) {
   const [open, setOpen] = useState(false);
   return <div className={`task-row ${task.status}`}>
     <div className="task-row-head" onClick={() => setOpen(!open)}>
-      <span className="task-title">{task.title}</span>
+      <span className="task-title">{task.title}
+        {task.demo && <span className="badge-demo">نمایشی</span>}
+      </span>
       <span className="task-meta">
         {agent ? agent.name : '—'} · {TASK_LABELS[task.kind]} · {' '}
-        {task.status === 'done' ? 'انجام شد ✓' : task.status === 'failed' ? 'ناموفق ✗' : task.status === 'working' ? 'در حال کار…' : task.status === 'walking' ? 'در راه…' : 'در صف…'}
+        {task.status === 'done' ? 'انجام شد ✓' : task.status === 'failed' ? 'ناموفق ✗'
+          : task.status === 'working' ? (task.isDelegation ? 'در حال توزیع…' : 'در حال کار…')
+          : task.status === 'walking' ? 'در راه…' : 'در صف…'}
       </span>
     </div>
+    {task.delegationId !== undefined && <p className="delegation-note" title={task.routeReason ?? undefined}>👥 توسط آرش توزیع شد</p>}
     <p className="task-detail">{task.detail}</p>
+    {task.isDelegation && delegationKids.length > 0 && <ul className="delegation-children">
+      {delegationKids.map(kid => {
+        const kidAgent = agents.find(a => a.id === kid.agentId);
+        return <li key={kid.id} title={kid.routeReason ?? undefined}>
+          <span className="deleg-kid-agent">{kidAgent ? kidAgent.name : '—'}</span>
+          <span className="deleg-kid-kind">{TASK_LABELS[kid.kind]}</span>
+          <span className="deleg-kid-status">{kid.status === 'done' ? 'انجام ✓' : kid.status === 'failed' ? 'ناموفق ✗' : kid.status === 'working' ? 'کار می‌کند…' : kid.status === 'walking' ? 'در راه…' : 'در صف…'}</span>
+        </li>;
+      })}
+    </ul>}
     {task.result && open && <div className="task-result">{task.result}</div>}
     {task.result && open && <ResultActions text={task.result} />}
     {task.result && <button className="ghost" onClick={() => setOpen(!open)}>{open ? 'بستن نتیجه' : 'دیدن نتیجه'}</button>}
@@ -156,7 +186,8 @@ function TasksPanel({ state }: { state: OfficeState }) {
     <h2>وظایف</h2>
     {state.tasks.length === 0 && <p className="empty">هنوز وظیفه‌ای نداده‌ای — از پنل «دادن وظیفه» شروع کن.</p>}
     <div className="task-list">{state.tasks.map(task =>
-      <TaskResult key={task.id} task={task} agent={state.agents.find(a => a.id === task.agentId)} />)}
+      <TaskResult key={task.id} task={task} agent={state.agents.find(a => a.id === task.agentId)} agents={state.agents}
+        delegationKids={task.isDelegation ? state.tasks.filter(t => t.delegationId === task.id) : []} />)}
     </div>
   </div>;
 }
@@ -165,7 +196,9 @@ function TasksPanel({ state }: { state: OfficeState }) {
 
 function AgentCard({ state, agentId, onClose }: { state: OfficeState; agentId: string; onClose: () => void }) {
   const agent = state.agents.find(a => a.id === agentId);
-  const [following, setFollowing] = useState(cameraCtl.followId === agentId);
+  // following را هر رندر از وضعیت واقعی دوربین مشتق کن — state محلیِ فقط-اولین-mount
+  // بعد از pan/zoom (که follow را لغو می‌کند) کهنه می‌شود
+  const following = cameraCtl.followId === agentId;
   if (!agent) return null;
   const lastTask = state.tasks.filter(t => t.agentId === agentId).sort((a, b) => b.createdAt - a.createdAt)[0];
   const presets = QUICK_TASKS[agent.role];
@@ -190,7 +223,7 @@ function AgentCard({ state, agentId, onClose }: { state: OfficeState; agentId: s
       {presets.map(p => <button key={p.label} className="chip" onClick={() => store.assign(agent.id, p.kind, p.label, p.detail)}>+ {p.label}</button>)}
     </div>
     <div className="agent-card-actions">
-      <button className="ghost" onClick={() => { const next = !following; setFollowing(next); setFollow(next ? agent.id : null); }}>
+      <button className="ghost" onClick={() => setFollow(following ? null : agent.id)}>
         {following ? 'توقف دوربین' : 'دنبال‌کردن با دوربین'}
       </button>
       <button className="ghost" onClick={() => (window as unknown as { __openAgent: (id: string) => void }).__openAgent(agent.id)}>شخصی‌سازی</button>
@@ -203,9 +236,14 @@ function AgentCard({ state, agentId, onClose }: { state: OfficeState; agentId: s
 function SettingsModal({ onClose }: { onClose: () => void }) {
   const [config, setConfig] = useState<AiConfig>(() => loadConfig());
   const [saved, setSaved] = useState(false);
+  const keyRef = useRef<HTMLInputElement>(null);
   return <div className="scrim" onClick={onClose}>
     <div className="modal" onClick={e => e.stopPropagation()}>
       <h2>تنظیمات هوش مصنوعی (کلید خودت)</h2>
+      {isDemoMode(config) && <div className="demo-banner-inline">
+        <span>حالت نمایش فعال است — ایجنت‌ها خروجی نمایشی می‌دهند. کلیدت را وارد کن تا واقعی شوند.</span>
+        <button className="ghost" onClick={() => keyRef.current?.focus()}>رفتن به فیلد کلید</button>
+      </div>}
       <p className="hint">کلید فقط در همین مرورگر خودت ذخیره می‌شود و فقط به سرویس‌دهنده‌ای که انتخاب می‌کنی فرستاده می‌شود.</p>
       <label className="field">سرویس‌دهنده
         <select value={config.provider} onChange={e => setConfig({ ...config, provider: e.target.value as ProviderKind, model: e.target.value === 'gemini' ? 'gemini-3.5-flash' : 'gpt-4o-mini' })}>
@@ -214,7 +252,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
         </select>
       </label>
       <label className="field">کلید API
-        <input type="password" value={config.apiKey} onChange={e => setConfig({ ...config, apiKey: e.target.value })} placeholder="کلید را اینجا بچسبان" dir="ltr" />
+        <input ref={keyRef} type="password" value={config.apiKey} onChange={e => setConfig({ ...config, apiKey: e.target.value })} placeholder="کلید را اینجا بچسبان" dir="ltr" />
       </label>
       {config.provider === 'openai-compat' &&
         <label className="field">آدرس پایه <small>اختیاری</small>
@@ -276,15 +314,89 @@ function AgentEditModal({ agent, onClose }: { agent: Agent; onClose: () => void 
   </div>;
 }
 
+/* ---------- دفتر مدیر ---------- */
+
+function OfficePanel({ state }: { state: OfficeState }) {
+  const [loading, setLoading] = useState(false);
+  const report = store.getDailyReport();
+  const briefing = state.briefing;
+  const noWorkToday = report.totalDone + report.totalFailed + report.totalActive === 0;
+
+  async function make(force?: boolean) {
+    if (loading) return;
+    setLoading(true);
+    try { await store.generateBriefing(force); } catch { /* استور throw نمی‌کند — فقط گارد */ }
+    setLoading(false);
+  }
+
+  return <div className="panel">
+    <h2>دفتر مدیر</h2>
+
+    <div className="brief-card">
+      <div className="brief-card-head">
+        <strong>بریفینگ آرش</strong>
+        {briefing && <span className={`brief-mode ${briefing.mode}`}>{briefing.mode === 'ai' ? 'با هوش مصنوعی' : 'نمایشی'}</span>}
+      </div>
+      {briefing && <p className="brief-time">تولید: {timeOf(briefing.at)} · آمار {briefing.statsKey.split('|')[0]}</p>}
+      {briefing && <p className="brief-text">{briefing.text}</p>}
+      {briefing && <ResultActions text={briefing.text} />}
+      {noWorkToday
+        ? <>
+            <p className="field-hint">امروز هنوز کاری ثبت نشده — اول وظیفه‌ای بده تا بریفینگ معنا پیدا کند.</p>
+            <button className="primary" disabled>تولید بریفینگ</button>
+          </>
+        : <div className="brief-actions-row">
+            <button className="primary" onClick={() => make()} disabled={loading}>{loading ? 'در حال تولید…' : 'تولید بریفینگ'}</button>
+            <button className="ghost" onClick={() => make(true)} disabled={loading}>تازه‌سازی</button>
+          </div>}
+    </div>
+
+    <h3 className="office-sub">خلاصهٔ روز</h3>
+    <div className="report-stats">
+      <div className="report-stat"><b>{report.totalDone}</b><span>انجام شد</span></div>
+      <div className="report-stat failed"><b>{report.totalFailed}</b><span>ناموفق</span></div>
+      <div className="report-stat active"><b>{report.totalActive}</b><span>در جریان</span></div>
+    </div>
+
+    <h3 className="office-sub">تیم</h3>
+    <div className="report-agent-grid">
+      {report.perAgent.map(pa => {
+        const agent = state.agents.find(a => a.id === pa.agentId);
+        if (!agent) return null;
+        return <div className="report-agent-row" key={pa.agentId}>
+          <Avatar agent={agent} size={26} />
+          <div className="report-agent-info">
+            <strong>{pa.name} <small>{ROLE_META[pa.role].label}</small></strong>
+            <span className="report-agent-nums">{pa.done} انجام · {pa.failed} ناموفق</span>
+            {pa.lastResult && <p className="report-agent-preview">{pa.lastResult.slice(0, 120)}{pa.lastResult.length > 120 ? '…' : ''}</p>}
+          </div>
+        </div>;
+      })}
+    </div>
+
+    <h3 className="office-sub">گزارش‌های ایجنت‌ها</h3>
+    {report.reportTasks.length === 0
+      ? <p className="empty">امروز هنوز وظیفه‌ای تمام نشده…</p>
+      : <div className="task-list">{report.reportTasks.map(task =>
+        <TaskResult key={task.id} task={task} agent={state.agents.find(a => a.id === task.agentId)} agents={state.agents}
+          delegationKids={task.isDelegation ? state.tasks.filter(t => t.delegationId === task.id) : []} />)}</div>}
+  </div>;
+}
+
 /* ---------- root ---------- */
 
 export default function App() {
   const [state, setState] = useState(() => store.state);
-  const [tab, setTab] = useState<'tasks' | 'team' | 'feed' | 'agents'>('tasks');
+  const [tab, setTab] = useState<'tasks' | 'team' | 'feed' | 'office' | 'agents'>('tasks');
   const [showSettings, setShowSettings] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [zen, setZen] = useState(false);
+  const [, bumpOnFollowCancel] = useState(0); // pan/zoom که follow را لغو کند → یک رندر تا دکمهٔ کارت همگام شود
+  const [aiConfig, setAiConfig] = useState(() => loadConfig());
+  const [onboarded, setOnboarded] = useState(() => {
+    try { return localStorage.getItem('sesemi-office-onboarded') === '1'; } catch { return true; }
+  });
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => store.subscribe(() => setState({ ...store.state })), []);
@@ -300,11 +412,15 @@ export default function App() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const resize = () => {
-      canvas.width = canvas.clientWidth * devicePixelRatio;
-      canvas.height = canvas.clientHeight * devicePixelRatio;
+      const w = canvas.clientWidth, h = canvas.clientHeight;
+      // تغییر معنادار ابعاد → دوباره fit (چرخش گوشی/resize پنجره دفتر را کراپ نمی‌کند)
+      const refit = Math.abs(w - cameraCtl.cssW) > 40 || Math.abs(h - cameraCtl.cssH) > 40;
+      canvas.width = w * devicePixelRatio;
+      canvas.height = h * devicePixelRatio;
       cameraCtl.dpr = devicePixelRatio;
-      cameraCtl.cssW = canvas.clientWidth;
-      cameraCtl.cssH = canvas.clientHeight;
+      cameraCtl.cssW = w;
+      cameraCtl.cssH = h;
+      if (refit && !cameraCtl.followId) cameraCtl.cam = fitCamera(w, h);
     };
     resize();
     initCamera(canvas);
@@ -345,12 +461,21 @@ export default function App() {
         pointers.set(e.pointerId, p);
         const [a, b] = [...pointers.values()];
         const dist = Math.hypot(a.x - b.x, a.y - b.y);
-        if (lastPinch) zoomAt((a.x + b.x) / 2, (a.y + b.y) / 2, dist / lastPinch);
+        if (lastPinch) {
+          const wasFollowing = cameraCtl.followId !== null;
+          zoomAt((a.x + b.x) / 2, (a.y + b.y) / 2, dist / lastPinch);
+          if (wasFollowing && cameraCtl.followId === null) bumpOnFollowCancel(t => t + 1);
+        }
         lastPinch = dist;
         moved = 99;
       } else {
         moved += Math.abs(p.x - prev.x) + Math.abs(p.y - prev.y);
-        if (moved > 6) { panBy(p.x - prev.x, p.y - prev.y); moved = Math.max(moved, 7); }
+        if (moved > 6) {
+          const wasFollowing = cameraCtl.followId !== null;
+          panBy(p.x - prev.x, p.y - prev.y);
+          if (wasFollowing && cameraCtl.followId === null) bumpOnFollowCancel(t => t + 1);
+          moved = Math.max(moved, 7);
+        }
         pointers.set(e.pointerId, p);
       }
     };
@@ -365,8 +490,10 @@ export default function App() {
     };
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
+      const wasFollowing = cameraCtl.followId !== null;
       const r = canvas.getBoundingClientRect();
       zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.12 : 1 / 1.12);
+      if (wasFollowing && cameraCtl.followId === null) bumpOnFollowCancel(t => t + 1);
     };
     canvas.addEventListener('pointerdown', down);
     canvas.addEventListener('pointermove', move);
@@ -398,14 +525,18 @@ export default function App() {
       </div>
     </header>
 
+    {isDemoMode(aiConfig) && <button className="demo-banner" onClick={() => setShowSettings(true)}>
+      حالت نمایش فعال است — کلیدت را در تنظیمات بده تا کار واقعی انجام شود
+    </button>}
+
     <div className="office-wrap">
       <canvas ref={canvasRef} className="office-canvas" />
-      {selectedId && <AgentCard state={state} agentId={selectedId} onClose={() => { setSelectedId(null); setFollow(null); }} />}
+      {selectedId && <AgentCard key={selectedId} state={state} agentId={selectedId} onClose={() => { setSelectedId(null); setFollow(null); }} />}
     </div>
 
     <div className="side-col">
       <nav className="tabbar">
-        {([['tasks', 'وظیفه'], ['team', 'تیم'], ['feed', 'فعالیت'], ['agents', 'وظایف‌ها']] as const).map(([id, label]) =>
+        {([['tasks', 'وظیفه'], ['team', 'تیم'], ['feed', 'فعالیت'], ['office', 'دفتر مدیر'], ['agents', 'وظایف‌ها']] as const).map(([id, label]) =>
           <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>{label}</button>)}
       </nav>
 
@@ -413,6 +544,7 @@ export default function App() {
         {tab === 'tasks' && <TaskForm state={state} />}
         {tab === 'team' && <AgentsPanel state={state} />}
         {tab === 'feed' && <FeedPanel state={state} />}
+        {tab === 'office' && <OfficePanel state={state} />}
         {tab === 'agents' && <TasksPanel state={state} />}
       </main>
     </div>
@@ -424,7 +556,20 @@ export default function App() {
       <button className="ghost" onClick={() => setZen(false)}>خروج از حالت تمرکز</button>
     </div>}
 
-    {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+    {showSettings && <SettingsModal onClose={() => { setShowSettings(false); setAiConfig(loadConfig()); }} />}
     {editing && <AgentEditModal agent={editing} onClose={() => setEditingId(null)} />}
+
+    {!onboarded && <div className="welcome-scrim" role="dialog" aria-modal="true" aria-label="خوش‌آمدگویی">
+      <div className="welcome-card">
+        <img src="/icons/icon-512.png" alt="" width={44} height={44} />
+        <p className="welcome-line1">دفتر تیم AI سسیمی</p>
+        <p className="welcome-line2">به آن‌ها کار بده و تماشا کن — هر ایجنت می‌رود پشت میزش، کار می‌کند و گزارش می‌دهد.</p>
+        <button className="primary" onClick={() => {
+          try { localStorage.setItem('sesemi-office-onboarded', '1'); } catch { /* private mode */ }
+          setOnboarded(true);
+        }}>شروع</button>
+        <p className="welcome-hint">بدون کلید API هم کار می‌کند؛ خروجی‌ها با برچسب «نمایشی» می‌آیند.</p>
+      </div>
+    </div>}
   </div>;
 }

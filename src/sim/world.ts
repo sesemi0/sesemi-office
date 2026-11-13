@@ -24,6 +24,9 @@ export const MAP: number[][] = (() => {
   g[2][8] = 1; g[3][8] = 1; g[4][8] = 1;
   // reception counter (bottom-left)
   g[9][2] = 1; g[10][2] = 1;
+  // furniture tiles are solid for pathfinding (2 = blocked but still rendered as floor):
+  // desks, coffee machine, meeting table, reception counter — A* نباید از روی مبلمان بگذرد
+  for (const [fx, fy] of [[2, 2], [5, 2], [2, 5], [5, 5], [6, 9], [9, 3], [3, 9]] as const) g[fy][fx] = 2;
   return g;
 })();
 

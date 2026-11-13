@@ -129,3 +129,63 @@ button.danger.ghost { margin-top: 14px; width: 100%; border: 1px solid #5d2e38; 
 .zen-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--fg); background: rgba(14, 24, 42, .72); backdrop-filter: blur(12px); border: 1px solid rgba(120, 170, 230, .2); border-radius: 22px; padding: 9px 16px }
 .live-dot { width: 7px; height: 7px; border-radius: 50%; background: #5ad5b2; box-shadow: 0 0 10px #5ad5b266; display: inline-block }
 .zen-hud .ghost { background: rgba(14, 24, 42, .72); backdrop-filter: blur(12px); border: 1px solid rgba(120, 170, 230, .2); border-radius: 22px; padding: 9px 14px; font-size: 11.5px }
+
+/* ---- additions: delegation, demo mode, دفتر مدیر, welcome overlay (no existing rule rewritten) ---- */
+
+/* demo badges / banners */
+.badge-demo { display: inline-block; margin-inline-start: 6px; padding: 2px 8px; border-radius: 20px; font-size: 9.5px; font-weight: 700; color: #1e1206; background: #f5b56a; vertical-align: middle }
+.demo-banner { display: block; width: 100%; text-align: center; font-size: 11px; color: #f5b56a; background: rgba(245, 181, 106, .1); border-bottom: 1px solid rgba(245, 181, 106, .3); padding: 8px 12px }
+.app-shell.zen .demo-banner { display: none }
+.demo-banner-inline { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; font-size: 11px; color: #f5b56a; background: rgba(245, 181, 106, .1); border: 1px solid rgba(245, 181, 106, .35); border-radius: 10px; padding: 10px 12px; margin: 10px 0; line-height: 1.8 }
+.demo-banner-inline .ghost { border: 1px solid rgba(245, 181, 106, .4); border-radius: 9px; padding: 6px 10px; font-size: 10.5px; white-space: nowrap }
+
+/* recipient switch + form feedback */
+.recip-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 12px 0 2px }
+.recip-switch button { font-size: 11.5px; padding: 9px 6px; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); background: var(--panel) }
+.recip-switch button.on { color: var(--blue); border-color: rgba(83, 185, 251, .5); background: rgba(83, 185, 251, .1) }
+.field select:disabled { opacity: .55 }
+.field-hint { display: block; font-size: 10px; color: var(--muted); line-height: 1.8; margin: -4px 0 10px }
+.form-ok { color: #5ad5b2; font-size: 11.5px; margin: 8px 0 }
+
+/* delegation rows */
+.delegation-note { font-size: 10px; color: #7cc7f5; margin: 6px 0 0; cursor: help }
+.delegation-children { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 5px }
+.delegation-children li { display: flex; align-items: center; gap: 8px; font-size: 10.5px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px }
+.deleg-kid-agent { color: var(--fg); font-weight: 600; font-size: 11px }
+.deleg-kid-kind { font-size: 9.5px }
+.deleg-kid-status { margin-inline-start: auto; font-size: 10px }
+
+/* دفتر مدیر — briefing card */
+.office-sub { font-size: 12px; margin: 18px 0 9px; color: var(--fg) }
+.brief-card { background: var(--panel); border: 1px solid rgba(83, 185, 251, .45); border-radius: 13px; padding: 13px; display: grid; gap: 9px }
+.brief-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px }
+.brief-mode { display: inline-block; font-size: 9.5px; padding: 2px 8px; border-radius: 20px; background: rgba(83, 185, 251, .16); color: #bfe0f7; border: 1px solid rgba(83, 185, 251, .35) }
+.brief-mode.rules { background: rgba(245, 181, 106, .15); color: #f5b56a; border-color: rgba(245, 181, 106, .4) }
+.brief-time { font-size: 10px; color: var(--muted); margin: 0 }
+.brief-text { font-size: 11.5px; line-height: 2; white-space: pre-wrap; user-select: text; margin: 0; color: #d7e3f4; max-height: 260px; overflow-y: auto }
+.brief-actions-row { display: flex; gap: 8px; align-items: stretch }
+.brief-actions-row .primary { margin-top: 0; width: auto; flex: 1 }
+.brief-actions-row .ghost { border: 1px solid var(--line); border-radius: 11px; padding: 9px 12px; white-space: nowrap }
+
+/* دفتر مدیر — daily stats + per-agent grid */
+.report-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px }
+.report-stat { background: var(--panel); border: 1px solid var(--line); border-radius: 11px; padding: 10px; text-align: center; display: grid; gap: 2px }
+.report-stat b { font-size: 20px; color: #5ad5b2 }
+.report-stat.failed b { color: #ff9d9d }
+.report-stat.active b { color: #f5b56a }
+.report-stat span { font-size: 10px; color: var(--muted) }
+.report-agent-grid { display: grid; gap: 9px }
+.report-agent-row { display: flex; gap: 10px; align-items: flex-start; background: var(--panel); border: 1px solid var(--line); border-radius: 11px; padding: 9px 11px }
+.report-agent-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px }
+.report-agent-info strong { font-size: 12px }
+.report-agent-info small { color: var(--muted); font-weight: 400; font-size: 10px }
+.report-agent-nums { font-size: 10px; color: var(--muted) }
+.report-agent-preview { font-size: 10.5px; color: #b7c8de; line-height: 1.9; margin: 0; white-space: pre-wrap; user-select: text }
+
+/* welcome overlay (first visit) */
+.welcome-scrim { position: fixed; inset: 0; background: rgba(3, 8, 16, .82); backdrop-filter: blur(6px); z-index: 60; display: grid; place-items: center; padding: 20px; overflow-y: auto }
+.welcome-card { width: min(360px, 100%); max-height: 86dvh; overflow-y: auto; margin-block: auto; text-align: center; background: rgba(14, 24, 42, .9); border: 1px solid rgba(120, 170, 230, .25); border-radius: 18px; padding: 26px 20px; box-shadow: 0 22px 60px rgba(0, 0, 0, .5); animation: card-in .3s cubic-bezier(.2, .9, .3, 1.2) }
+.welcome-line1 { font-size: 17px; font-weight: 700; margin: 10px 0 4px }
+.welcome-line2 { font-size: 13px; color: var(--muted); margin: 0 0 18px; line-height: 1.9 }
+.welcome-card .primary { margin-top: 0 }
+.welcome-hint { font-size: 10px; color: var(--muted); margin: 12px 0 0; line-height: 1.8 }
