@@ -3,6 +3,10 @@ import { store, type OfficeState } from './officeStore';
 import { cameraCtl, fitCamera, initCamera, panBy, pickAgent, render, setFollow, stepEffects, zoomAt } from './render/officeCanvas';
 import { ROLE_META, TASK_LABELS, type Agent, type Role, type Task, type TaskKind } from './sim/agents';
 import { isDemoMode, loadConfig, saveConfig, GEMINI_MODELS, OPENAI_COMPAT_MODELS, type AiConfig, type ProviderKind } from './ai/llm';
+import {
+  adoptedKey, fetchMissionBoard, loadAdoptedKeys, saveAdoptedKeys,
+  type Mission, type MissionTaskStatus,
+} from './missions';
 
 /* ---------- small shared bits ---------- */
 
@@ -383,11 +387,92 @@ function OfficePanel({ state }: { state: OfficeState }) {
   </div>;
 }
 
+/* ---------- missions (Mission Control bridge) ---------- */
+
+const MISSION_STATUS_META: Record<MissionTaskStatus, { label: string; cls: string }> = {
+  done: { label: 'انجام شد', cls: 'ok' },
+  failed: { label: 'ناموفق', cls: 'err' },
+  active: { label: 'فعال', cls: 'run' },
+  queued: { label: 'در صف', cls: 'wait' },
+};
+
+function MissionsPanel() {
+  const [missions, setMissions] = useState<Mission[] | null>(null);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [adopted, setAdopted] = useState<Set<string>>(() => loadAdoptedKeys());
+  const [flash, setFlash] = useState('');
+
+  const load = () => {
+    setLoading(true);
+    setError('');
+    fetchMissionBoard()
+      .then(board => setMissions(board))
+      .catch(e => setError(e instanceof Error ? e.message : 'خطا در خواندن تابلو'))
+      .finally(() => setLoading(false));
+  };
+  useEffect(load, []);
+
+  function handOver(mission: Mission) {
+    const fresh = mission.tasks.filter(t => (t.status === 'active' || t.status === 'queued')
+      && !adopted.has(adoptedKey(mission.code, t.index)));
+    if (!fresh.length) { setFlash('چیزی برای سپردن نبود — همهٔ وظایف انجام یا سپرده شده‌اند.'); return; }
+    const sent = store.adoptMission({ ...mission, tasks: fresh });
+    const next = new Set(adopted);
+    for (const t of fresh) next.add(adoptedKey(mission.code, t.index));
+    setAdopted(next);
+    saveAdoptedKeys(next);
+    setFlash(`${sent} کار از مأموریت ${mission.code} وارد دفتر شد — ایجنت‌ها راه می‌افتند.`);
+  }
+
+  return <div className="panel">
+    <h2>مأموریت‌ها <span className="panel-hint">زنده از Mission Control</span>
+      <button className="ghost mini" style={{ marginInlineStart: 'auto' }} onClick={load} disabled={loading}>
+        {loading ? '…' : 'تازه‌سازی'}
+      </button>
+    </h2>
+    {error && <p className="form-error" role="alert">{error}</p>}
+    {flash && <p className="form-ok" role="status">{flash}</p>}
+    {!error && missions && !missions.length && <p className="panel-hint">مأموریتی در تابلو نیست — از پنل یا تلگرام یکی بساز.</p>}
+    <div className="mission-list">
+      {(missions ?? []).map(mission => {
+        const pending = mission.tasks.filter(t => t.status !== 'done' && t.status !== 'failed');
+        const allAdopted = pending.every(t => adopted.has(adoptedKey(mission.code, t.index)));
+        const pct = mission.total ? Math.round((mission.done / mission.total) * 100) : 0;
+        return <div className="mission-card" key={mission.code}>
+          <div className="mission-head">
+            <code>{mission.code}</code>
+            <span className="mission-count">{mission.done}/{mission.total}</span>
+            <button className="primary mini" disabled={allAdopted || !pending.length} onClick={() => handOver(mission)}>
+              {allAdopted ? 'سپرده شد' : 'به دفتر بسپار'}
+            </button>
+          </div>
+          <div className="mission-bar"><span style={{ width: `${pct}%` }} /></div>
+          <ul className="mission-tasks">
+            {mission.tasks.map(t => {
+              const meta = MISSION_STATUS_META[t.status];
+              const isAdopted = adopted.has(adoptedKey(mission.code, t.index));
+              return <li key={t.index}>
+                <span className="mission-task-text">{t.text}</span>
+                <span className={`mission-chip ${meta.cls}`}>{meta.label}</span>
+                {isAdopted && t.status !== 'done' && <span className="mission-chip office">در دفتر</span>}
+              </li>;
+            })}
+          </ul>
+        </div>;
+      })}
+    </div>
+    <p className="panel-hint" style={{ marginTop: 10 }}>
+      خروجی کار ایجنت‌ها به <a href="https://sesemi.pages.dev/panel" target="_blank" rel="noopener noreferrer">تابلوی سایت</a> هم برمی‌گردد.
+    </p>
+  </div>;
+}
+
 /* ---------- root ---------- */
 
 export default function App() {
   const [state, setState] = useState(() => store.state);
-  const [tab, setTab] = useState<'tasks' | 'team' | 'feed' | 'office' | 'agents'>('tasks');
+  const [tab, setTab] = useState<'tasks' | 'team' | 'feed' | 'office' | 'agents' | 'missions'>('tasks');
   const [showSettings, setShowSettings] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -536,7 +621,7 @@ export default function App() {
 
     <div className="side-col">
       <nav className="tabbar">
-        {([['tasks', 'وظیفه'], ['team', 'تیم'], ['feed', 'فعالیت'], ['office', 'دفتر مدیر'], ['agents', 'وظایف‌ها']] as const).map(([id, label]) =>
+        {([['tasks', 'وظیفه'], ['team', 'تیم'], ['feed', 'فعالیت'], ['office', 'دفتر مدیر'], ['missions', 'مأموریت‌ها'], ['agents', 'وظایف‌ها']] as const).map(([id, label]) =>
           <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>{label}</button>)}
       </nav>
 
@@ -545,6 +630,7 @@ export default function App() {
         {tab === 'team' && <AgentsPanel state={state} />}
         {tab === 'feed' && <FeedPanel state={state} />}
         {tab === 'office' && <OfficePanel state={state} />}
+        {tab === 'missions' && <MissionsPanel />}
         {tab === 'agents' && <TasksPanel state={state} />}
       </main>
     </div>

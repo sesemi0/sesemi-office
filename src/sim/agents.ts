@@ -71,6 +71,10 @@ export interface Task {
   isDelegation?: boolean;    // true = والدِ تخصیص مدیریتی (آرش) — هرگز AI/demo نمی‌گیرد
   delegationId?: string;     // روی فرزند: id والد
   routeReason?: string;      // متن فارسی دلیل انتخاب این ایجنت، برای UI
+  /** ست می‌شود وقتی وظیفه از یک مأموریت Mission Control برگرفته شده (پل دفتر) */
+  missionCode?: string;
+  /** متن اصلی وظیفهٔ مأموریت که این کار از آن ساخته شد */
+  missionTask?: string;
 }
 
 /** خروجی تخصیص مدیریتی: id وظیفهٔ والد (آرش) + فرزندان ساخته‌شده */

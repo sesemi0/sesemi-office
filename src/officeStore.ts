@@ -11,6 +11,7 @@ import {
 import {
   isDemoMode, loadConfig, runCompletion, runDemoCompletion, taskPrompt, type AiConfig,
 } from './ai/llm';
+import { missionTaskKind, reportAgentOutputs, type Mission } from './missions';
 
 export interface OfficeState {
   agents: Agent[];
@@ -412,6 +413,60 @@ export class OfficeStore {
     return { delegationId, children };
   }
 
+  /**
+   * پل Mission Control — وظایف یک مأموریت زنده را به دفتر می‌آورد:
+   * هر وظیفهٔ انجام‌نشدهٔ مأموریت یک کار دفتر می‌شود که با همان
+   * قاعده‌محورِ chooseDelegatee به بهترین ایجنت سپرده می‌شود (آرش توزیع می‌کند،
+   * بدون فراخوانی AI). خروجی هر کار بعد از اتمام به /api/agent-outputs برمی‌گردد.
+   * برگشت: تعداد وظایفی که واقعاً سپرده شد.
+   */
+  adoptMission(mission: Mission): number {
+    let sent = 0;
+    for (const mt of mission.tasks) {
+      if (mt.status === 'done' || mt.status === 'failed') continue;
+      const kind = missionTaskKind(mt.text);
+      const delegatee = chooseDelegatee(kind, this.state.agents, this.state.tasks);
+      if (!delegatee) continue;
+      const task: Task = {
+        id: uid('tk'),
+        agentId: delegatee.id,
+        kind,
+        title: mt.text,
+        detail: `${mt.text}\n(این کار بخشی از مأموریت ${mission.code} است — خروجی را به شکل گزارش تحویل بده.)`,
+        status: 'queued',
+        createdAt: Date.now(),
+        missionCode: mission.code,
+        missionTask: mt.text,
+      };
+      this.state.tasks = [task, ...this.state.tasks];
+      sent++;
+      void this.runTask(task.id);
+    }
+    if (sent) {
+      const manager = this.state.agents.find(a => a.role === 'manager');
+      this.log(`${manager ? manager.name + ' ' : ''}مأموریت ${mission.code} را بین تیم توزیع کرد — ${sent} کار به دفتر آمد.`);
+    }
+    this.persist();
+    this.emit();
+    return sent;
+  }
+
+  /**
+   * خروجی کارِ یک وظیفهٔ مأموریتی را به بک‌اند سسیمی (D1) گزارش می‌کند —
+   * fire-and-forget؛ شکست شبکه هرگز جریان دفتر را نمی‌شکند.
+   */
+  private reportToMission(task: Task, agentName: string, agentRole: string, status: 'done' | 'failed'): void {
+    if (!task.missionCode || !task.result) return;
+    void reportAgentOutputs([{
+      missionCode: task.missionCode,
+      taskTitle: task.missionTask || task.title,
+      agentName,
+      agentRole,
+      status,
+      result: task.result,
+    }]);
+  }
+
   /** کار ۲ — گزارش روزانه؛ pure و بدون side-effect، برای رندر مستقیم پنل. */
   getDailyReport(): DailyReport {
     const dateKey = localDateKey(Date.now());
@@ -540,6 +595,7 @@ export class OfficeStore {
         const a2 = this.state.agents.find(a => a.id === t2.agentId);
         if (a2) a2.taskId = undefined;
         this.log(`وظیفهٔ «${t2.title}» منقضی شد ✗`);
+        if (a2) this.reportToMission(t2, a2.name, ROLE_META[a2.role].label, 'failed');
         this.persist();
         this.emit();
       }
@@ -610,6 +666,7 @@ export class OfficeStore {
           a2.currentSpot = undefined;
           a2.taskId = undefined;
           this.log(`${a2.name} «${t2.title}» را تمام کرد ✓ (نمایشی)`);
+          this.reportToMission(t2, a2.name, ROLE_META[a2.role].label, 'done');
         }
       } finally {
         for (const timer of timers) window.clearTimeout(timer);
@@ -636,6 +693,7 @@ export class OfficeStore {
         a2.currentSpot = undefined;
         a2.taskId = undefined;
         this.log(`${a2.name} «${t2.title}» را تمام کرد ✓`);
+        this.reportToMission(t2, a2.name, ROLE_META[a2.role].label, 'done');
       }
     } catch (error) {
       const t2 = this.state.tasks.find(t => t.id === taskId);
@@ -649,6 +707,7 @@ export class OfficeStore {
         a2.currentSpot = undefined;
         a2.taskId = undefined;
         this.log(`${a2.name} در «${t2.title}» به مشکل خورد ✗`);
+        this.reportToMission(t2, a2.name, ROLE_META[a2.role].label, 'failed');
       }
     } finally {
       this.runningCalls.delete(taskId);
