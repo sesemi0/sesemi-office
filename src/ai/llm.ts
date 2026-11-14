@@ -158,6 +158,8 @@ type DemoKind = 'email' | 'content' | 'research' | 'schedule' | 'web';
 
 /** مخزن قالب نمایشی: ۳ واریانت باکیفیت فارسی برای هر kind — agentName و لحن نقش را بازتاب می‌دهد. */
 const DEMO_TEMPLATES: Record<DemoKind, ((agentName: string, persona: string, detail: string) => string)[]> = {
+  // web در runDemoCompletion پیش از این جدول با demoWebPage جداگانه ساخته می‌شود — این ورودی فقط برای کامل بودن نوع است
+  web: [() => ''],
   email: [
     (name, persona, detail) => `موضوع: پیگیری درخواست شما
 
