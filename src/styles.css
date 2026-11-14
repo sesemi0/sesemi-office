@@ -92,8 +92,9 @@ button.danger.ghost { margin-top: 14px; width: 100%; border: 1px solid #5d2e38; 
 @media (min-width: 900px) {
   .app-shell { flex-direction: row; flex-wrap: wrap }
   .topbar { width: 100% }
-  .office-wrap { flex: 1 1 58%; height: auto }
-  .side-col { display: flex; flex-direction: column; flex: 1 1 42%; min-width: 0; border-inline-start: 1px solid var(--line) }
+  /* ارتفاع قطعی برای بوم — بدون این، بوم در دسکتاپ به‌شدت بلند می‌شود و صحنه کج/بریده دیده می‌شود */
+  .office-wrap { flex: 1 1 58%; height: calc(100dvh - 54px); min-height: 420px }
+  .side-col { display: flex; flex-direction: column; flex: 1 1 42%; min-width: 0; border-inline-start: 1px solid var(--line); height: calc(100dvh - 54px); overflow-y: auto }
   .tabbar { border-top: 0; border-bottom: 1px solid var(--line) }
   .panel-area { flex: 1; height: auto }
 }
