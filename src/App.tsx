@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { store, type OfficeState } from './officeStore';
-import { cameraCtl, fitCamera, initCamera, panBy, pickAgent, render, setFollow, stepEffects, zoomAt } from './render/officeCanvas';
+import { cameraCtl, fitCamera, initCamera, panBy, pickAgent, pickTile, render, resetView, rotateBy, setFollow, stepEffects, zoomAt } from './render/officeCanvas';
 import { ROLE_META, TASK_LABELS, type Agent, type Role, type Task, type TaskKind } from './sim/agents';
 import { isDemoMode, loadConfig, saveConfig, GEMINI_MODELS, OPENAI_COMPAT_MODELS, type AiConfig, type ProviderKind } from './ai/llm';
 import {
@@ -574,12 +574,13 @@ export default function App() {
     return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); };
   }, []);
 
-  // pointer interactions: drag-pan, pinch-zoom, tap-select, wheel-zoom
+  // pointer interactions: rotate (drag), lift-and-drop agents, pinch-zoom + two-finger pan, tap-select, wheel-zoom
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const pointers = new Map<number, { x: number; y: number }>();
-    let moved = 0, lastPinch = 0;
+    let moved = 0, lastPinch = 0, lastMid = { x: 0, y: 0 };
+    let dragId: string | null = null;
     const pos = (e: PointerEvent) => {
       const r = canvas.getBoundingClientRect();
       return { x: e.clientX - r.left, y: e.clientY - r.top };
@@ -587,7 +588,16 @@ export default function App() {
     const down = (e: PointerEvent) => {
       try { canvas.setPointerCapture(e.pointerId); } catch { /* synthetic/inactive pointer — harmless */ }
       pointers.set(e.pointerId, pos(e));
-      if (pointers.size === 1) moved = 0;
+      if (pointers.size === 1) {
+        moved = 0;
+        const p = pos(e);
+        const id = pickAgent(p.x, p.y);
+        if (id) {
+          dragId = id;
+          cameraCtl.dragAgentId = id;
+          cameraCtl.liftStart = performance.now();
+        }
+      }
     };
     const move = (e: PointerEvent) => {
       const p = pos(e);
@@ -597,18 +607,26 @@ export default function App() {
         pointers.set(e.pointerId, p);
         const [a, b] = [...pointers.values()];
         const dist = Math.hypot(a.x - b.x, a.y - b.y);
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
         if (lastPinch) {
           const wasFollowing = cameraCtl.followId !== null;
-          zoomAt((a.x + b.x) / 2, (a.y + b.y) / 2, dist / lastPinch);
+          zoomAt(mid.x, mid.y, dist / lastPinch);
+          panBy(mid.x - lastMid.x, mid.y - lastMid.y);
           if (wasFollowing && cameraCtl.followId === null) bumpOnFollowCancel(t => t + 1);
         }
         lastPinch = dist;
+        lastMid = mid;
         moved = 99;
+      } else if (dragId) {
+        // lifted agent follows the pointer horizontally — dropped on release
+        moved += Math.abs(p.x - prev.x) + Math.abs(p.y - prev.y);
+        pointers.set(e.pointerId, p);
       } else {
         moved += Math.abs(p.x - prev.x) + Math.abs(p.y - prev.y);
         if (moved > 6) {
           const wasFollowing = cameraCtl.followId !== null;
-          panBy(p.x - prev.x, p.y - prev.y);
+          rotateBy((p.x - prev.x) * 0.011);
+          panBy(0, (p.y - prev.y) * 0.4);
           if (wasFollowing && cameraCtl.followId === null) bumpOnFollowCancel(t => t + 1);
           moved = Math.max(moved, 7);
         }
@@ -616,10 +634,23 @@ export default function App() {
       }
     };
     const up = (e: PointerEvent) => {
-      if (pointers.size === 1 && moved <= 6) {
-        const p = pos(e);
-        const id = pickAgent(p.x, p.y);
-        setSelectedId(id);
+      const p = pos(e);
+      if (dragId) {
+        if (moved > 6) {
+          const tile = pickTile(p.x, p.y);
+          const ok = tile ? store.walkAgentTo(dragId, tile) : false;
+          if (!ok) {
+            const agent = store.state.agents.find(a => a.id === dragId);
+            if (agent) { agent.bubble = 'اینجا نمی‌شه! 😅'; store.nudge(); }
+          }
+          setSelectedId(dragId);
+        } else {
+          setSelectedId(dragId); // a tap on the agent opens its card
+        }
+        dragId = null;
+        cameraCtl.dragAgentId = null;
+      } else if (pointers.size === 1 && moved <= 6) {
+        setSelectedId(pickAgent(p.x, p.y));
       }
       pointers.delete(e.pointerId);
       lastPinch = 0;
@@ -656,6 +687,7 @@ export default function App() {
         <span className="brand-hint">شبیه‌ساز شرکت هوشمند</span>
       </div>
       <div className="topbar-actions">
+        <button className="ghost" onClick={() => { resetView(); }} aria-label="بازنشانی نما" title="بازنشانی نما">⟲</button>
         <button className="ghost" onClick={() => setZen(true)} aria-label="حالت تمرکز">⛶</button>
         <button className="ghost" onClick={() => setShowSettings(true)}>⚙️ تنظیمات AI</button>
       </div>

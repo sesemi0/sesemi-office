@@ -55,6 +55,8 @@ export interface Agent {
   currentSpot?: string;
   bubble?: string;           // short speech bubble text
   taskId?: string;
+  /** timestamp تحویل کار — رندرر پرش + کانفتی جشن را اجرا می‌کند */
+  celebrateAt?: number;
 }
 
 export interface Task {
@@ -75,6 +77,8 @@ export interface Task {
   missionCode?: string;
   /** متن اصلی وظیفهٔ مأموریت که این کار از آن ساخته شد */
   missionTask?: string;
+  /** timestamp تحویل — رندرر پرش + کانفتی جشن را تا ۱.۳ ثانیه اجرا می‌کند */
+  celebrateAt?: number;
 }
 
 /** خروجی تخصیص مدیریتی: id وظیفهٔ والد (آرش) + فرزندان ساخته‌شده */

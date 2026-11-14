@@ -3,7 +3,7 @@
  * the REAL AI task engine. One rAF loop advances movement; task assignment
  * walks the agent to its desk, runs the actual LLM call, then reports.
  */
-import { findPath, MAP, MAP_H, MAP_W, SPOTS, spotApproach, spotById } from './sim/world';
+import { findPath, MAP, MAP_H, MAP_W, SPOTS, spotApproach, spotById, type Vec2 } from './sim/world';
 import {
   GROWTH_NAMES, ROLE_META, TASK_LABELS, classifyBrief, chooseDelegatee, routeToSpot, workAnchor,
   type ActivityEvent, type Agent, type DelegationResult, type Role, type Task, type TaskKind,
@@ -522,6 +522,37 @@ export class OfficeStore {
     void this.runTask(task.id);
   }
 
+  /** بلندکردن و رهاسازی: ایجنت با پوینتر جابه‌جا می‌شود و به کاشی مقصد قدم می‌زند */
+  walkAgentTo(agentId: string, tile: Vec2): boolean {
+    const agent = this.state.agents.find(a => a.id === agentId);
+    if (!agent) return false;
+    if (agent.state === 'working') return false; // وسط کار واقعی جابه‌جا نمی‌شود
+    if (MAP[tile.y]?.[tile.x] !== 0) return false;
+    const occupiedByOther = this.state.agents.some(a => a.id !== agentId
+      && a.state !== 'walking' && a.pos.x === tile.x && a.pos.y === tile.y);
+    if (occupiedByOther) return false;
+    const occupied = this.occupied();
+    occupied.delete(agent.pos.y * MAP_W + agent.pos.x);
+    const path = findPath(agent.pos, tile);
+    if (!path || !path.length) return false;
+    agent.state = 'walking';
+    agent.taskId = undefined;
+    agent.pendingArrival = undefined;
+    agent.currentSpot = undefined;
+    agent.path = path;
+    agent.from = { ...agent.pos };
+    agent.to = { ...path[0] };
+    agent.moveT = 0;
+    agent.bubble = 'رفتم! 🚶';
+    this.emit();
+    return true;
+  }
+
+  /** یک رندر بلافاصله — برای بازخوردهای خارج از چرخهٔ tick */
+  nudge(): void {
+    this.emit();
+  }
+
   /** کار ۲ — گزارش روزانه؛ pure و بدون side-effect، برای رندر مستقیم پنل. */
   getDailyReport(): DailyReport {
     const dateKey = localDateKey(Date.now());
@@ -717,6 +748,7 @@ export class OfficeStore {
           t2.result = result;
           t2.finishedAt = Date.now();
           a2.bubble = 'تمام شد! ✓';
+          a2.celebrateAt = Date.now();
           a2.state = 'idle';
           a2.currentSpot = undefined;
           a2.taskId = undefined;
@@ -744,6 +776,7 @@ export class OfficeStore {
         t2.result = result;
         t2.finishedAt = Date.now();
         a2.bubble = 'تمام شد! ✓';
+        a2.celebrateAt = Date.now();
         a2.state = 'idle';
         a2.currentSpot = undefined;
         a2.taskId = undefined;
@@ -766,6 +799,8 @@ export class OfficeStore {
             t2.result = result;
             t2.finishedAt = Date.now();
             a2.bubble = 'تمام شد! ✓';
+            a2.celebrateAt = Date.now();
+            a2.celebrateAt = Date.now();
             this.log(keyIssue
               ? `کلید API نامعتبر بود — ${a2.name} خروجی نمایشی داد. برای کار واقعی کلید جدید در تنظیمات بده.`
               : `سرویس AI موقتاً شلوغ بود — ${a2.name} خروجی نمایشی داد. برای کار واقعی بعداً «تلاش دوباره» بزن.`);
