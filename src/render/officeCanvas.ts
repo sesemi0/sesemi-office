@@ -316,12 +316,14 @@ function drawReception(ctx: CanvasRenderingContext2D, x: number, y: number): voi
 
 function drawWall(ctx: CanvasRenderingContext2D, x: number, y: number, lamps: boolean): void {
   drawBox(ctx, x, y, 0, 0, 1, 1, WALL_H, '#25395f', '#1d2c4a');
-  // glowing window on perimeter faces (night) / glass strip (day)
+  // پنجره فقط روی وجه‌های رو‌به‌دوربین — وجه پشتی شیشه شناور «ستون» می‌ساخت
+  const wallD = depthOf(x + .5, y + .5);
   const perimeter: [number, number][] = [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]];
   for (const [nx, ny] of perimeter) {
     if (nx >= 0 && ny >= 0 && nx < MAP_W && ny < MAP_H) continue; // inner wall — no window
     const cxw = x + .5 + (nx - x) * .5;
     const cyw = y + .5 + (ny - y) * .5;
+    if (depthOf(cxw, cyw) <= wallD) continue; // back-facing — skip
     const p1 = project(cxw - .18, cyw - .18, WALL_H - 8);
     const p2 = project(cxw + .18, cyw - .18, WALL_H - 8);
     const p3 = project(cxw + .18, cyw + .18, WALL_H - 8);
