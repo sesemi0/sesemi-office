@@ -256,6 +256,7 @@ function drawDesk(ctx: CanvasRenderingContext2D, x: number, y: number, facing: '
       cameraCtl.particles.push({ x: s.x, y: s.y, vx: (Math.random() - .5) * .3, vy: -(.4 + Math.random() * .4), life: 1, hue: Math.random() < .5 ? '#9fdcff' : ACCENT, size: 2.5 });
     }
   }
+  // (particles are world-space; drawn inside the world transform)
   // chair behind the desk
   const cxy = spotStandTile({ id: '', x, y, facing, label: '' });
   drawBox(ctx, cxy.x + .3, cxy.y + .3, 0, 0, .4, .4, 9, '#31517c', '#24405f');
@@ -391,11 +392,12 @@ function drawAgent(ctx: CanvasRenderingContext2D, agent: Agent, cam: Camera, now
   const lift = lifted ? Math.min(18, (now - cameraCtl.liftStart) / 4) : 0;
 
   const ground = project(wx, wy, 0);
-  const x = ground.x * cam.scale + cam.panX;
-  const y = (ground.y - jump - lift) * cam.scale + cam.panY;
+  const x = ground.x;
+  const y = ground.y - jump - lift;
   const s = cam.scale * (lifted ? 1.15 : 1);
 
-  cameraCtl.hits.push({ id: agent.id, x, feetY: y, scale: cam.scale });
+  // hit areas live in SCREEN space for picking, while the sprite draws in world space
+  cameraCtl.hits.push({ id: agent.id, x: ground.x * cam.scale + cam.panX, feetY: (ground.y - jump - lift) * cam.scale + cam.panY, scale: cam.scale });
 
   // walking dust puffs
   if (walking && Math.random() < .3) {
@@ -413,6 +415,7 @@ function drawAgent(ctx: CanvasRenderingContext2D, agent: Agent, cam: Camera, now
       });
     }
   }
+  // (all particle coords are world-space — the render pass draws them inside the world transform)
 
   // ground shadow (shrinks when lifted)
   ctx.save();
@@ -522,10 +525,20 @@ export function render(canvas: HTMLCanvasElement, agents: Agent[], now: number):
   ctx.clearRect(0, 0, cameraCtl.cssW, cameraCtl.cssH);
   cameraCtl.hits.length = 0;
 
+  // همه‌چیز در فضای جهان رسم می‌شود (ترنسفورم واحد pan+scale)؛ فقط tint در فضای صفحه است
+  let inWorld = false;
+  const setSpace = (world: boolean): void => {
+    if (inWorld === world) return;
+    inWorld = world;
+    ctx.setTransform(cameraCtl.dpr, 0, 0, cameraCtl.dpr, 0, 0);
+    if (world) { ctx.translate(cam.panX, cam.panY); ctx.scale(cam.scale, cam.scale); }
+  };
+  setSpace(true);
+
   /* floor pass: visible ground tiles, back-to-front */
   interface FloorTile { x: number; y: number; d: number }
   const floors: FloorTile[] = [];
-  for (let y = 0; y < MAP_H; y++) {
+  for (let y = 0, fl = 0; y < MAP_H; y++) {
     for (let x = 0; x < MAP_W; x++) {
       if (MAP[y][x] !== 0) continue;
       floors.push({ x, y, d: depthOf(x + .5, y + .5) });
@@ -579,35 +592,35 @@ export function render(canvas: HTMLCanvasElement, agents: Agent[], now: number):
   q.sort((a, b) => a.d - b.d || a.order - b.order);
   for (const item of q) item.fn();
 
-  /* particles (screen space) */
-  ctx.save();
+  /* particles (world space) */
   for (const p of cameraCtl.particles) {
     ctx.globalAlpha = Math.max(0, Math.min(1, p.life)) * .85;
     ctx.fillStyle = p.hue;
     ctx.beginPath(); ctx.roundRect(p.x, p.y, p.size, p.size, p.size / 2); ctx.fill();
   }
-  ctx.restore();
+  ctx.globalAlpha = 1;
 
-  /* day-night tint + warm desk lamps */
-  if (amb.tint !== 'transparent') {
-    ctx.fillStyle = amb.tint;
-    ctx.fillRect(0, 0, cameraCtl.cssW, cameraCtl.cssH);
-  }
+  /* warm desk lamps (world space) */
   if (amb.lamps) {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     for (const spot of SPOTS) {
       if (!spot.id.startsWith('desk')) continue;
       const g = project(spot.x + .5, spot.y + .5, 16);
-      const gx = g.x * cam.scale + cam.panX;
-      const gy = g.y * cam.scale + cam.panY;
-      const grad = ctx.createRadialGradient(gx, gy, 2, gx, gy, 60 * cam.scale);
+      const grad = ctx.createRadialGradient(g.x, g.y, 2, g.x, g.y, 60);
       grad.addColorStop(0, 'rgba(255,190,110,.34)');
       grad.addColorStop(1, 'rgba(255,190,110,0)');
       ctx.fillStyle = grad;
-      ctx.beginPath(); ctx.arc(gx, gy, 60 * cam.scale, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(g.x, g.y, 60, 0, Math.PI * 2); ctx.fill();
     }
     ctx.restore();
+  }
+
+  /* day-night tint (screen space) */
+  setSpace(false);
+  if (amb.tint !== 'transparent') {
+    ctx.fillStyle = amb.tint;
+    ctx.fillRect(0, 0, cameraCtl.cssW, cameraCtl.cssH);
   }
 }
 

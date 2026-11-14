@@ -567,7 +567,7 @@ export default function App() {
       last = now;
       stepEffects(dt);
       render(canvas, store.state.agents, now);
-      (window as unknown as { __office?: object }).__office = { hits: cameraCtl.hits }; // live pick areas (diagnostics)
+      (window as unknown as { __office?: object }).__office = { hits: cameraCtl.hits, cam: cameraCtl.cam }; // live pick areas + camera (diagnostics)
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
