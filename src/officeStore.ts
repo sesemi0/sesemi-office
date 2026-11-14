@@ -571,6 +571,11 @@ export class OfficeStore {
     const looksHtml = doctype >= 0 || htmlTag >= 0
       || html.includes('<div') || html.includes('<section') || html.includes('<body');
     if (!looksHtml) return; // مدل کد نداد — همان متن بماند
+    // صفحهٔ بریده‌شده (سقف توکن) خالی رندر می‌شود — همان متن بماند تا «تلاش دوباره» با سقف بالاتر رفته شود
+    if (!html.includes('</html') && !html.includes('</body')) {
+      task.result = 'پاسخ مدل وسط راه بریده شد (صفحه ناقص) — «تلاش دوباره» را بزن.';
+      return;
+    }
     task.resultHtml = html;
     task.result = 'صفحه ساخته شد — «پیش‌نمایش صفحه» را باز کن؛ کد کامل داخل همان پنجره است.';
   }
@@ -790,7 +795,8 @@ export class OfficeStore {
     // ---- شاخهٔ AI واقعی (رفتار فعلی، دست‌نخورده) ----
     try {
       this.runningCalls.add(taskId);
-      const result = await runCompletion(config, system, taskPrompt(taskNow.kind, taskNow.detail));
+      // صفحهٔ وب کامل جا می‌خواهد — سقف توکن این نوع وظیفه بالاتر است
+      const result = await runCompletion(config, system, taskPrompt(taskNow.kind, taskNow.detail), taskNow.kind === 'web' ? 8192 : 2000);
       // گارد reload/حذف — مثل شاخهٔ demo: task و agent را دوباره از this.state بگیر
       const t2 = this.state.tasks.find(t => t.id === taskId);
       const a2 = t2 ? this.state.agents.find(a => a.id === t2.agentId) : undefined;
