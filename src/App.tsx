@@ -4,7 +4,7 @@ import { cameraCtl, fitCamera, initCamera, panBy, pickAgent, render, setFollow, 
 import { ROLE_META, TASK_LABELS, type Agent, type Role, type Task, type TaskKind } from './sim/agents';
 import { isDemoMode, loadConfig, saveConfig, GEMINI_MODELS, OPENAI_COMPAT_MODELS, type AiConfig, type ProviderKind } from './ai/llm';
 import {
-  adoptedKey, fetchMissionBoard, loadAdoptedKeys, saveAdoptedKeys,
+  adoptedKey, createMissionFromGoal, fetchMissionBoard, loadAdoptedKeys, saveAdoptedKeys,
   type Mission, type MissionTaskStatus,
 } from './missions';
 
@@ -402,6 +402,42 @@ function MissionsPanel() {
   const [loading, setLoading] = useState(false);
   const [adopted, setAdopted] = useState<Set<string>>(() => loadAdoptedKeys());
   const [flash, setFlash] = useState('');
+  const [goal, setGoal] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  /** هدف → مأموریت واقعی (AI برنامه می‌ریزد، تلگرام خبر می‌گیرد) → همان لحظه وارد دفتر */
+  async function launchGoal() {
+    const text = goal.trim();
+    if (!text || creating) return;
+    setCreating(true); setError(''); setFlash('🧠 هوش مصنوعی در حال برنامه‌ریزی است… (حدود ۱۰ ثانیه)');
+    try {
+      const { code } = await createMissionFromGoal(text);
+      setGoal('');
+      let mission: Mission | undefined;
+      for (let attempt = 0; attempt < 4 && !mission; attempt++) {
+        await new Promise(r => setTimeout(r, attempt ? 2500 : 800));
+        const board = await fetchMissionBoard();
+        mission = board.find(m => m.code === code);
+        setMissions(board);
+      }
+      if (!mission) {
+        setFlash(`مأموریت ${code} ساخته شد و تلگرام خبر گرفت — هنوز به تابلو نرسیده؛ چند لحظه بعد «تازه‌سازی» بزن.`);
+        return;
+      }
+      const fresh = mission.tasks.filter(t => t.status === 'active' || t.status === 'queued');
+      const sent = store.adoptMission({ ...mission, tasks: fresh });
+      const next = new Set(adopted);
+      for (const t of fresh) next.add(adoptedKey(mission.code, t.index));
+      setAdopted(next);
+      saveAdoptedKeys(next);
+      setFlash(`🎯 مأموریت ${code} با ${sent} کار وارد دفتر شد — ایجنت‌ها همین الان راه می‌افتند. تلگرامت هم برنامه را گرفت.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'ساخت مأموریت شکست خورد.');
+      setFlash('');
+    } finally {
+      setCreating(false);
+    }
+  }
 
   const load = () => {
     setLoading(true);
@@ -431,6 +467,17 @@ function MissionsPanel() {
         {loading ? '…' : 'تازه‌سازی'}
       </button>
     </h2>
+    <div className="mission-goal">
+      <label className="field">هدف بده به تیم
+        <textarea value={goal} onChange={e => setGoal(e.target.value)} rows={2}
+          placeholder="مثلاً: برای برند قهوه یک فرم سفارش آنلاین بساز، یه لندینگ پیج می‌خوام"
+          disabled={creating} />
+      </label>
+      <button className="primary" disabled={creating || !goal.trim()} onClick={launchGoal}>
+        {creating ? 'در حال برنامه‌ریزی…' : 'ساخت مأموریت و شروع فوری'}
+      </button>
+      <small className="field-hint">AI برنامه می‌ریزد، تلگرامت خبر می‌گیرد و ایجنت‌ها همان لحظه سر کار می‌روند.</small>
+    </div>
     {error && <p className="form-error" role="alert">{error}</p>}
     {flash && <p className="form-ok" role="status">{flash}</p>}
     {!error && missions && !missions.length && <p className="panel-hint">مأموریتی در تابلو نیست — از پنل یا تلگرام یکی بساز.</p>}
@@ -463,7 +510,7 @@ function MissionsPanel() {
       })}
     </div>
     <p className="panel-hint" style={{ marginTop: 10 }}>
-      خروجی کار ایجنت‌ها به <a href="https://sesemi.pages.dev/panel" target="_blank" rel="noopener noreferrer">تابلوی سایت</a> هم برمی‌گردد.
+      خروجی هر کار در «دفتر مدیر» کامل ثبت می‌شود و اعلان‌های مأموریت به تلگرامت می‌رود.
     </p>
   </div>;
 }

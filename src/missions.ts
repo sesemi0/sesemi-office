@@ -33,6 +33,20 @@ function parseStatusLabel(label: string): MissionTaskStatus {
   return 'active';
 }
 
+/** hand a goal to Mission Control: AI plans it, tables store it, Telegram gets the real plan */
+export async function createMissionFromGoal(goal: string): Promise<{ code: string; reply: string }> {
+  const response = await fetch(`${N8N_WEBHOOK}/sesemi-mission`, {
+    method: 'POST',
+    headers: { 'content-type': 'text/plain' },
+    body: JSON.stringify({ goal }),
+    signal: AbortSignal.timeout(60000),
+  });
+  if (!response.ok) throw new Error(`Mission Control پاسخ ${response.status} داد.`);
+  const data = await response.json() as { mission_code?: string; reply_text?: string };
+  if (!data.mission_code) throw new Error('پاسخ Mission Control کد مأموریت نداشت.');
+  return { code: data.mission_code, reply: data.reply_text || '' };
+}
+
 /** the panel's own webhook, text-board format */
 export async function fetchMissionBoard(): Promise<Mission[]> {
   const response = await fetch(`${N8N_WEBHOOK}/sesemi-mission-status`, {

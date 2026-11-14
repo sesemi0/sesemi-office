@@ -42,27 +42,37 @@ export async function runCompletion(config: AiConfig, system: string, userPrompt
   if (!config.apiKey.trim()) throw new AiError('کلید API تنظیم نشده است — از بخش «تنظیمات» کلیدت را وارد کن.');
   const key = config.apiKey.trim();
   if (config.provider === 'gemini') {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(config.model)}:generateContent?key=${encodeURIComponent(key)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: system }] },
-          contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-          generationConfig: { maxOutputTokens: maxTokens, temperature: 0.7 },
-        }),
-        signal: AbortSignal.timeout(45000),
-      },
-    );
-    if (!response.ok) {
-      const body = await response.text().catch(() => '');
-      throw new AiError(`گوگل پاسخ ${response.status} داد. کلید یا مدل را بررسی کن. ${body.slice(0, 160)}`);
+    // زنجیرهٔ جایگزین: مدل انتخابی اول؛ روی خطای موقت سرور (429/5xx) مدل بعدی امتحان می‌شود
+    const candidates = [config.model, ...GEMINI_MODELS.filter(m => m !== config.model)].slice(0, 3);
+    let lastStatus = 0;
+    let lastBody = '';
+    for (const model of candidates) {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: system }] },
+            contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+            generationConfig: { maxOutputTokens: maxTokens, temperature: 0.7 },
+          }),
+          signal: AbortSignal.timeout(45000),
+        },
+      );
+      if (!response.ok) {
+        lastStatus = response.status;
+        lastBody = await response.text().catch(() => '');
+        // خطای موقت/ظرفیت → مدل بعدی؛ خطای کلید (401/403/400) → همان اول قطع
+        if (response.status === 401 || response.status === 403 || response.status === 400) break;
+        continue;
+      }
+      const data = await response.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+      const reply = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim();
+      if (!reply) throw new AiError('مدل پاسخ خالی داد — دوباره تلاش کن.');
+      return reply;
     }
-    const data = await response.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
-    const reply = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim();
-    if (!reply) throw new AiError('مدل پاسخ خالی داد — دوباره تلاش کن.');
-    return reply;
+    throw new AiError(`گوگل پاسخ ${lastStatus} داد (حتی با مدل جایگزین). کلید را بررسی کن یا کمی بعد دوباره تلاش کن. ${lastBody.slice(0, 120)}`);
   }
   // OpenAI-compatible chat completions
   const base = (config.baseUrl || 'https://api.openai.com/v1').replace(/\/$/, '');
