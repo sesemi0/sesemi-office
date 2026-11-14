@@ -754,8 +754,11 @@ export class OfficeStore {
       const t2 = this.state.tasks.find(t => t.id === taskId);
       const a2 = t2 ? this.state.agents.find(a => a.id === t2.agentId) : undefined;
       if (t2 && a2 && t2.status === 'working') {
-        // کلید باطل → سقوط نرم به حالت نمایشی: کاربر ارور نمی‌بیند، کار تحویل می‌شود
-        if (error instanceof AiError && error.code === 'invalid_key') {
+        // کلید باطل یا سرویس شلوغ → سقوط نرم به حالت نمایشی: کاربر ارور نمی‌بیند، کار تحویل می‌شود
+        const soft = error instanceof AiError
+          && (error.code === 'invalid_key' || error.code === 'transient');
+        if (soft) {
+          const keyIssue = error instanceof AiError && error.code === 'invalid_key';
           try {
             const result = await runDemoCompletion(t2.kind, a2.name, a2.persona, t2.detail);
             t2.demo = true;
@@ -763,13 +766,15 @@ export class OfficeStore {
             t2.result = result;
             t2.finishedAt = Date.now();
             a2.bubble = 'تمام شد! ✓';
-            this.log(`کلید API نامعتبر بود — ${a2.name} خروجی نمایشی داد. برای کار واقعی کلید جدید در تنظیمات بده.`);
+            this.log(keyIssue
+              ? `کلید API نامعتبر بود — ${a2.name} خروجی نمایشی داد. برای کار واقعی کلید جدید در تنظیمات بده.`
+              : `سرویس AI موقتاً شلوغ بود — ${a2.name} خروجی نمایشی داد. برای کار واقعی بعداً «تلاش دوباره» بزن.`);
           } catch {
             t2.status = 'failed';
-            t2.result = 'کلید API نامعتبر است و خروجی نمایشی هم در دسترس نبود.';
+            t2.result = keyIssue ? 'کلید API نامعتبر است و خروجی نمایشی هم در دسترس نبود.' : 'سرویس AI شلوغ بود و خروجی نمایشی هم در دسترس نبود.';
             t2.finishedAt = Date.now();
             a2.bubble = 'مشکل پیش آمد!';
-            this.log('کلید API نامعتبر است — از تنظیمات کلید جدید بده.');
+            this.log(keyIssue ? 'کلید API نامعتبر است — از تنظیمات کلید جدید بده.' : 'سرویس AI شلوغ بود — بعداً «تلاش دوباره» بزن.');
           }
         } else {
           t2.status = 'failed';

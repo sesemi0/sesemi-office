@@ -38,10 +38,13 @@ export const OPENAI_COMPAT_MODELS = ['gpt-4o-mini', 'gpt-4o', 'glm-4-flash', 'op
 
 export class AiError extends Error {
   /** 'invalid_key' → کلید باطل/غیرمجاز؛ store با آن سقوط نرم به حالت نمایشی می‌کند */
-  code: 'invalid_key' | 'other' = 'other';
-  constructor(message: string, code: 'invalid_key' | 'other' = 'other') {
+  code: 'invalid_key' | 'transient' | 'other' = 'other';
+  /** وضعیت HTTP وقتی از سرویس‌دهنده آمده باشد (503/429/…) */
+  status?: number;
+  constructor(message: string, code: 'invalid_key' | 'transient' | 'other' = 'other', status?: number) {
     super(message);
     this.code = code;
+    this.status = status;
   }
 }
 
@@ -72,7 +75,7 @@ export async function runCompletion(config: AiConfig, system: string, userPrompt
         lastBody = await response.text().catch(() => '');
         // خطای کلید (401/403) → همان اول قطع با کد invalid_key تا دفتر سقوط نرم کند
         if (response.status === 401 || response.status === 403) {
-          throw new AiError('کلید API نامعتبر است — یک کلید جدید از aistudio.google.com بگیر و در تنظیمات وارد کن.', 'invalid_key');
+          throw new AiError('کلید API نامعتبر است — یک کلید جدید از aistudio.google.com بگیر و در تنظیمات وارد کن.', 'invalid_key', response.status);
         }
         // 400/429/5xx → مدل بعدی
         continue;
@@ -82,7 +85,11 @@ export async function runCompletion(config: AiConfig, system: string, userPrompt
       if (!reply) throw new AiError('مدل پاسخ خالی داد — دوباره تلاش کن.');
       return reply;
     }
-    throw new AiError(`گوگل پاسخ ${lastStatus} داد (حتی با مدل جایگزین). کلید را بررسی کن یا کمی بعد دوباره تلاش کن. ${lastBody.slice(0, 120)}`);
+    throw new AiError(
+      `گوگل پاسخ ${lastStatus} داد (حتی با مدل جایگزین) — سرویس موقتاً شلوغ است. کمی بعد «تلاش دوباره» بزن.`,
+      lastStatus === 429 || lastStatus >= 500 ? 'transient' : 'other',
+      lastStatus,
+    );
   }
   // OpenAI-compatible chat completions
   const base = (config.baseUrl || 'https://api.openai.com/v1').replace(/\/$/, '');
@@ -99,8 +106,9 @@ export async function runCompletion(config: AiConfig, system: string, userPrompt
   });
   if (!response.ok) {
     const body = await response.text().catch(() => '');
-    const code = response.status === 401 || response.status === 403 ? 'invalid_key' : 'other';
-    throw new AiError(`سرویس‌دهنده پاسخ ${response.status} داد. ${body.slice(0, 160)}`, code);
+    const code = response.status === 401 || response.status === 403 ? 'invalid_key'
+      : (response.status === 429 || response.status >= 500) ? 'transient' : 'other';
+    throw new AiError(`سرویس‌دهنده پاسخ ${response.status} داد. ${body.slice(0, 160)}`, code, response.status);
   }
   const data = await response.json() as { choices?: { message?: { content?: string } }[] };
   const reply = data.choices?.[0]?.message?.content?.trim();
