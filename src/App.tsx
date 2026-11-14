@@ -181,7 +181,11 @@ function TaskResult({ task, agent, agents = [], delegationKids = [] }: {
     </ul>}
     {task.result && open && <div className="task-result">{task.result}</div>}
     {task.result && open && <ResultActions text={task.result} />}
-    {task.result && <button className="ghost" onClick={() => setOpen(!open)}>{open ? 'بستن نتیجه' : 'دیدن نتیجه'}</button>}
+    <div className="task-actions">
+      {task.result && <button className="ghost" onClick={() => setOpen(!open)}>{open ? 'بستن نتیجه' : 'دیدن نتیجه'}</button>}
+      {task.status === 'failed' && <button className="ghost mini" onClick={() => store.retryTask(task.id)}>تلاش دوباره</button>}
+      {task.status !== 'done' && task.status !== 'failed' && <button className="ghost mini danger" onClick={() => store.cancelTask(task.id)}>لغو</button>}
+    </div>
   </div>;
 }
 
@@ -519,7 +523,7 @@ function MissionsPanel() {
 
 export default function App() {
   const [state, setState] = useState(() => store.state);
-  const [tab, setTab] = useState<'tasks' | 'team' | 'feed' | 'office' | 'agents' | 'missions'>('tasks');
+  const [tab, setTab] = useState<'tasks' | 'team' | 'feed' | 'office' | 'agents' | 'missions'>('missions');
   const [showSettings, setShowSettings] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -668,7 +672,7 @@ export default function App() {
 
     <div className="side-col">
       <nav className="tabbar">
-        {([['tasks', 'وظیفه'], ['team', 'تیم'], ['feed', 'فعالیت'], ['office', 'دفتر مدیر'], ['missions', 'مأموریت‌ها'], ['agents', 'وظایف‌ها']] as const).map(([id, label]) =>
+        {([['missions', 'مأموریت‌ها'], ['tasks', 'وظیفه'], ['team', 'تیم'], ['feed', 'فعالیت'], ['office', 'دفتر مدیر'], ['agents', 'وظایف‌ها']] as const).map(([id, label]) =>
           <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>{label}</button>)}
       </nav>
 
@@ -694,14 +698,18 @@ export default function App() {
 
     {!onboarded && <div className="welcome-scrim" role="dialog" aria-modal="true" aria-label="خوش‌آمدگویی">
       <div className="welcome-card">
-        <img src="/icons/icon-512.png" alt="" width={44} height={44} />
-        <p className="welcome-line1">دفتر تیم AI سسیمی</p>
-        <p className="welcome-line2">به آن‌ها کار بده و تماشا کن — هر ایجنت می‌رود پشت میزش، کار می‌کند و گزارش می‌دهد.</p>
+        <img src="/icons/icon-512.png" alt="" width={52} height={52} />
+        <p className="welcome-line1">دفتر زندهٔ تیم هوش مصنوعی</p>
+        <p className="welcome-line2">یک جمله بنویس — تیم AI برنامه می‌ریزد، سر کار می‌رود و نتیجه را تحویل می‌دهد. همین.</p>
+        <div className="welcome-chips">
+          <span>🖥 سایت و لندینگ</span><span>✍️ محتوا و کپشن</span><span>🔍 تحقیق و گزارش</span><span>🗓 برنامه‌ریزی</span>
+        </div>
         <button className="primary" onClick={() => {
           try { localStorage.setItem('sesemi-office-onboarded', '1'); } catch { /* private mode */ }
           setOnboarded(true);
-        }}>شروع</button>
-        <p className="welcome-hint">بدون کلید API هم کار می‌کند؛ خروجی‌ها با برچسب «نمایشی» می‌آیند.</p>
+          setTab('missions');
+        }}>همین حالا به تیم کار بده</button>
+        <p className="welcome-hint">بدون کلید هم کار می‌کند (حالت نمایشی) · اعلان‌ها به تلگرام می‌رود · دفتر با هر کارِ انجام‌شده بزرگ‌تر می‌شود</p>
       </div>
     </div>}
   </div>;

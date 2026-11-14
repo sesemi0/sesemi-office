@@ -10,7 +10,7 @@
  */
 import { MAP, MAP_H, MAP_W, SPOTS, spotStandTile, type Vec2 } from '../sim/world';
 import type { Agent } from '../sim/agents';
-import { workAnchor } from '../sim/agents';
+import { GROWTH_NAMES, workAnchor } from '../sim/agents';
 
 export const TILE_W = 76;
 export const TILE_H = 38;
@@ -542,6 +542,42 @@ function drawAgent(ctx: CanvasRenderingContext2D, agent: Agent, cam: Camera, now
   }
 }
 
+/* ---------- office growth: the team physically builds the campus ---------- */
+
+const GROWTH_BUILDINGS: { wx: number; wy: number; h: number; top: string; face: string }[] = [
+  { wx: 12.2, wy: 10.8, h: 40, top: '#2e4f78', face: '#1d3352' },
+  { wx: 13.1, wy: 10.2, h: 58, top: '#33567f', face: '#21395e' },
+  { wx: 14.0, wy: 9.6, h: 50, top: '#2c5a55', face: '#1c3c39' },
+  { wx: 14.9, wy: 9.0, h: 64, top: '#3a5b8c', face: '#263f63' },
+  { wx: 15.8, wy: 8.4, h: 88, top: '#41639a', face: '#2a446c' },
+  { wx: 16.7, wy: 7.8, h: 34, top: '#2e5e46', face: '#1d3d2e' },
+];
+
+const growthCache = { v: 0, at: 0 };
+function growthLevel(now: number): number {
+  if (now - growthCache.at > 600) {
+    try { growthCache.v = Number(localStorage.getItem('sesemi-office-growth')) || 0; } catch { /* private mode */ }
+    growthCache.at = now;
+  }
+  return growthCache.v;
+}
+let growthSeen = -1;
+let growthBornAt = 0;
+
+function drawGrowthBuilding(ctx: CanvasRenderingContext2D, i: number, scale: number, phase: Ambience['phase']): void {
+  const b = GROWTH_BUILDINGS[i];
+  const p = isoOf(b.wx, b.wy);
+  const rx = (TILE_W / 2) * .92 * scale;
+  const ry = (TILE_H / 2) * .92 * scale;
+  extrudedDiamond(ctx, p.x, p.y, rx, ry, b.h * scale, shade(b.top, phase === 'night' ? .55 : 1), b.face, phase === 'night' ? .6 : .92, phase === 'night' ? .45 : .78);
+  if (scale >= .98) {
+    ctx.font = '9px Vazirmatn, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(159,216,255,.75)';
+    ctx.fillText(GROWTH_NAMES[i], p.x, p.y + 14);
+  }
+}
+
 /* ---------- depth-sorted draw queue ---------- */
 
 interface QItem { sum: number; order: number; world: boolean; fn: () => void }
@@ -653,6 +689,16 @@ export function render(canvas: HTMLCanvasElement, agents: Agent[], now: number):
     // جمع اعشاری مستقیم — گردکردن ایجنتِ نیم‌کاشی را به ردیف دیوار اشتباه می‌برد
     const sum = agent.from.x + (agent.to.x - agent.from.x) * t + agent.from.y + (agent.to.y - agent.from.y) * t;
     depthQueue.push({ sum, order: 1, world: false, fn: () => drawAgent(ctx, agent, cam, now) });
+  }
+  // ساختمان‌های محوطه (جلوی تمام کاشی‌ها هستند — جمع > حداکثر نقشه) با انیمیشن ظاهرشدن
+  const growth = growthLevel(now);
+  if (growth !== growthSeen) { growthBornAt = now; growthSeen = growth; }
+  for (let i = 0; i < Math.min(growth, GROWTH_BUILDINGS.length); i++) {
+    const isNewest = i === growth - 1;
+    const age = Math.min(1, (now - growthBornAt) / 900);
+    const e = isNewest ? 1 + 2.2 * Math.pow(age - 1, 3) + 1.2 * Math.pow(age - 1, 2) : 1; // easeOutBack
+    const gi = i;
+    depthQueue.push({ sum: GROWTH_BUILDINGS[gi].wx + GROWTH_BUILDINGS[gi].wy, order: 2, world: true, fn: () => drawGrowthBuilding(ctx, gi, Math.max(.01, e), amb.phase) });
   }
   // painter order: ascending (sum, order) — agents at the same tile sum draw
   // after that tile's furniture, and seated agents line up with their desk

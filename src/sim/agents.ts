@@ -82,6 +82,9 @@ export interface DelegationResult { delegationId: string; children: Task[] }
 
 export interface ActivityEvent { id: string; at: number; agentId?: string; text: string }
 
+/** ساختمان‌های محوطه — تیم با هر ۲ کارِ تحویل‌شده یکی را می‌سازد (رندرر همان ترتیب را می‌کشد) */
+export const GROWTH_NAMES = ['کافهٔ تیم', 'استودیوی دوم', 'آزمایشگاه تحقیق', 'سالن جلسات', 'برج سسِمی', 'پارک مرکزی'];
+
 /** Seated pixel offset toward the desk the agent uses (screen-space tweak). */
 export function workAnchor(spot: Spot): Vec2 {
   return spot.facing === 'right' ? { x: spot.x - 0.45, y: spot.y } : { x: spot.x + 0.45, y: spot.y };

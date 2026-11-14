@@ -36,7 +36,14 @@ export function saveConfig(config: AiConfig): void {
 export const GEMINI_MODELS = ['gemini-3.5-flash', 'gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.8-flash', 'gemini-flash-latest'];
 export const OPENAI_COMPAT_MODELS = ['gpt-4o-mini', 'gpt-4o', 'glm-4-flash', 'openai/gpt-4o-mini'];
 
-export class AiError extends Error {}
+export class AiError extends Error {
+  /** 'invalid_key' → کلید باطل/غیرمجاز؛ store با آن سقوط نرم به حالت نمایشی می‌کند */
+  code: 'invalid_key' | 'other' = 'other';
+  constructor(message: string, code: 'invalid_key' | 'other' = 'other') {
+    super(message);
+    this.code = code;
+  }
+}
 
 export async function runCompletion(config: AiConfig, system: string, userPrompt: string, maxTokens = 2000): Promise<string> {
   if (!config.apiKey.trim()) throw new AiError('کلید API تنظیم نشده است — از بخش «تنظیمات» کلیدت را وارد کن.');
@@ -63,8 +70,11 @@ export async function runCompletion(config: AiConfig, system: string, userPrompt
       if (!response.ok) {
         lastStatus = response.status;
         lastBody = await response.text().catch(() => '');
-        // خطای موقت/ظرفیت → مدل بعدی؛ خطای کلید (401/403/400) → همان اول قطع
-        if (response.status === 401 || response.status === 403 || response.status === 400) break;
+        // خطای کلید (401/403) → همان اول قطع با کد invalid_key تا دفتر سقوط نرم کند
+        if (response.status === 401 || response.status === 403) {
+          throw new AiError('کلید API نامعتبر است — یک کلید جدید از aistudio.google.com بگیر و در تنظیمات وارد کن.', 'invalid_key');
+        }
+        // 400/429/5xx → مدل بعدی
         continue;
       }
       const data = await response.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
@@ -89,7 +99,8 @@ export async function runCompletion(config: AiConfig, system: string, userPrompt
   });
   if (!response.ok) {
     const body = await response.text().catch(() => '');
-    throw new AiError(`سرویس‌دهنده پاسخ ${response.status} داد. ${body.slice(0, 160)}`);
+    const code = response.status === 401 || response.status === 403 ? 'invalid_key' : 'other';
+    throw new AiError(`سرویس‌دهنده پاسخ ${response.status} داد. ${body.slice(0, 160)}`, code);
   }
   const data = await response.json() as { choices?: { message?: { content?: string } }[] };
   const reply = data.choices?.[0]?.message?.content?.trim();

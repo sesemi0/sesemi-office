@@ -189,6 +189,11 @@ button.danger.ghost { margin-top: 14px; width: 100%; border: 1px solid #5d2e38; 
 .welcome-line2 { font-size: 13px; color: var(--muted); margin: 0 0 18px; line-height: 1.9 }
 .welcome-card .primary { margin-top: 0 }
 .welcome-hint { font-size: 10px; color: var(--muted); margin: 12px 0 0; line-height: 1.8 }
+.welcome-chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 12px 0 16px }
+.welcome-chips span { font-size: 10px; padding: 4px 10px; border-radius: 20px; border: 1px solid rgba(120, 170, 230, .3); color: #b7c8de }
+.welcome-card .primary { width: 100% }
+.task-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px }
+.ghost.mini.danger { color: #ff9d9d; border-color: rgba(255, 157, 157, .35) }
 
 /* ---------- missions tab (Mission Control bridge) ---------- */
 .mission-goal { display: grid; gap: 8px; background: rgba(83, 185, 251, .06); border: 1px solid rgba(83, 185, 251, .25); border-radius: 14px; padding: 12px 13px; margin-top: 10px }

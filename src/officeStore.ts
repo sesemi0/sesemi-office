@@ -5,11 +5,11 @@
  */
 import { findPath, MAP, MAP_H, MAP_W, SPOTS, spotApproach, spotById } from './sim/world';
 import {
-  ROLE_META, TASK_LABELS, classifyBrief, chooseDelegatee, routeToSpot, workAnchor,
+  GROWTH_NAMES, ROLE_META, TASK_LABELS, classifyBrief, chooseDelegatee, routeToSpot, workAnchor,
   type ActivityEvent, type Agent, type DelegationResult, type Role, type Task, type TaskKind,
 } from './sim/agents';
 import {
-  isDemoMode, loadConfig, runCompletion, runDemoCompletion, taskPrompt, type AiConfig,
+  AiError, isDemoMode, loadConfig, runCompletion, runDemoCompletion, taskPrompt, type AiConfig,
 } from './ai/llm';
 import { missionTaskKind, reportAgentOutputs, type Mission } from './missions';
 
@@ -82,6 +82,8 @@ export class OfficeStore {
   private lastTime = 0;
   private running = false;
   private saveTimer = 0;
+  /** سطح ساخته‌شدهٔ محوطه — برای تشخیص ارتقای جدید و لاگ کردنش */
+  private growthLevel = 0;
 
   constructor() {
     this.state = this.load() ?? defaults();
@@ -94,6 +96,9 @@ export class OfficeStore {
       }
     }
     this.state.tasks.forEach(t => { if (t.status !== 'done' && t.status !== 'failed') t.status = 'failed'; });
+    // سطح محوطه بی‌صدا همگام می‌شود تا کارهای قدیمی دوباره «ساخت‌وساز» لاگ نشوند
+    this.growthLevel = Math.min(GROWTH_NAMES.length, Math.floor(this.state.tasks.filter(t => t.status === 'done').length / 2));
+    try { localStorage.setItem('sesemi-office-growth', String(this.growthLevel)); } catch { /* private mode */ }
   }
 
   private load(): OfficeState | null {
@@ -136,6 +141,16 @@ export class OfficeStore {
   persist(): void {
     window.clearTimeout(this.saveTimer);
     this.saveTimer = window.setTimeout(() => {
+      // رشد محوطه: هر ۲ کارِ تحویل‌شده یک ساختمانِ جدید می‌سازد (رندرر می‌کشد، اینجا فقط شمارش)
+      const doneCount = this.state.tasks.filter(t => t.status === 'done').length;
+      const level = Math.min(GROWTH_NAMES.length, Math.floor(doneCount / 2));
+      try { localStorage.setItem('sesemi-office-growth', String(level)); } catch { /* private mode */ }
+      if (level > this.growthLevel) {
+        for (let i = this.growthLevel; i < level; i++) {
+          this.log(`🏗 دفتر ارتقا یافت — تیم «${GROWTH_NAMES[i]}» را ساخت!`);
+        }
+        this.growthLevel = level;
+      }
       try {
         localStorage.setItem(PERSIST_KEY, JSON.stringify({
           agents: this.state.agents.map(a => ({ ...a, state: 'idle', path: [], bubble: undefined })),
@@ -467,6 +482,46 @@ export class OfficeStore {
     }]);
   }
 
+  /* ---- مدیریت: کنترل مستقیم وظایف ---- */
+
+  /** لغو یک وظیفهٔ در جریان — ایجنت فوراً آزاد می‌شود */
+  cancelTask(taskId: string): void {
+    const task = this.state.tasks.find(t => t.id === taskId);
+    if (!task || task.status === 'done' || task.status === 'failed') return;
+    task.status = 'failed';
+    task.result = 'توسط مدیر لغو شد.';
+    task.finishedAt = Date.now();
+    const agent = this.state.agents.find(a => a.taskId === taskId);
+    if (agent) {
+      agent.taskId = undefined;
+      agent.state = 'idle';
+      agent.path = [];
+      agent.pendingArrival = undefined;
+      agent.currentSpot = undefined;
+      agent.bubble = undefined;
+    }
+    this.log(`وظیفهٔ «${task.title}» لغو شد.`);
+    this.persist();
+    this.emit();
+  }
+
+  /** تلاش دوباره برای وظیفهٔ ناموفق/لغوشده */
+  retryTask(taskId: string): void {
+    const task = this.state.tasks.find(t => t.id === taskId);
+    if (!task || task.status !== 'failed') return;
+    const agent = this.state.agents.find(a => a.id === task.agentId);
+    if (!agent) return;
+    task.status = 'queued';
+    task.result = undefined;
+    task.finishedAt = undefined;
+    agent.taskId = undefined;
+    agent.state = 'idle';
+    this.log(`«${task.title}» دوباره به ${agent.name} سپرده شد.`);
+    this.persist();
+    this.emit();
+    void this.runTask(task.id);
+  }
+
   /** کار ۲ — گزارش روزانه؛ pure و بدون side-effect، برای رندر مستقیم پنل. */
   getDailyReport(): DailyReport {
     const dateKey = localDateKey(Date.now());
@@ -699,15 +754,34 @@ export class OfficeStore {
       const t2 = this.state.tasks.find(t => t.id === taskId);
       const a2 = t2 ? this.state.agents.find(a => a.id === t2.agentId) : undefined;
       if (t2 && a2 && t2.status === 'working') {
-        t2.status = 'failed';
-        t2.result = error instanceof Error ? error.message : String(error);
-        t2.finishedAt = Date.now();
-        a2.bubble = 'مشکل پیش آمد!';
+        // کلید باطل → سقوط نرم به حالت نمایشی: کاربر ارور نمی‌بیند، کار تحویل می‌شود
+        if (error instanceof AiError && error.code === 'invalid_key') {
+          try {
+            const result = await runDemoCompletion(t2.kind, a2.name, a2.persona, t2.detail);
+            t2.demo = true;
+            t2.status = 'done';
+            t2.result = result;
+            t2.finishedAt = Date.now();
+            a2.bubble = 'تمام شد! ✓';
+            this.log(`کلید API نامعتبر بود — ${a2.name} خروجی نمایشی داد. برای کار واقعی کلید جدید در تنظیمات بده.`);
+          } catch {
+            t2.status = 'failed';
+            t2.result = 'کلید API نامعتبر است و خروجی نمایشی هم در دسترس نبود.';
+            t2.finishedAt = Date.now();
+            a2.bubble = 'مشکل پیش آمد!';
+            this.log('کلید API نامعتبر است — از تنظیمات کلید جدید بده.');
+          }
+        } else {
+          t2.status = 'failed';
+          t2.result = error instanceof Error ? error.message : String(error);
+          t2.finishedAt = Date.now();
+          a2.bubble = 'مشکل پیش آمد!';
+          this.log(`${a2.name} در «${t2.title}» به مشکل خورد ✗`);
+        }
         a2.state = 'idle';
         a2.currentSpot = undefined;
         a2.taskId = undefined;
-        this.log(`${a2.name} در «${t2.title}» به مشکل خورد ✗`);
-        this.reportToMission(t2, a2.name, ROLE_META[a2.role].label, 'failed');
+        this.reportToMission(t2, a2.name, ROLE_META[a2.role].label, t2.status === 'done' ? 'done' : 'failed');
       }
     } finally {
       this.runningCalls.delete(taskId);
