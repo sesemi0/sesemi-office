@@ -98,6 +98,7 @@ export function parseMissionBoard(board: string): Mission[] {
 /** keyword routing, same spirit as the store's classifyBrief */
 export function missionTaskKind(text: string): TaskKind {
   const t = text.toLowerCase();
+  if (/لندینگ|سایت|وب|پیج|landing|website|web page|فرم/.test(t)) return 'web';
   if (/ایمیل|مکاتبه|email|پیگیری/.test(t)) return 'email';
   if (/گزارش|تحقیق|بررسی|تحلیل|research|مطالعه|بازار/.test(t)) return 'research';
   if (/برنامه|زمانبندی|زمان‌بندی|schedule|تقویم/.test(t)) return 'schedule';

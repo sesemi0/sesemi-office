@@ -196,6 +196,14 @@ button.danger.ghost { margin-top: 14px; width: 100%; border: 1px solid #5d2e38; 
 .task-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px }
 .ghost.mini.danger { color: #ff9d9d; border-color: rgba(255, 157, 157, .35) }
 
+/* پیش‌نمایش صفحهٔ ساخته‌شده توسط ایجنت */
+.landing-scrim { position: fixed; inset: 0; background: rgba(3, 8, 16, .86); backdrop-filter: blur(6px); z-index: 70; display: grid; place-items: center; padding: 18px }
+.landing-window { width: min(980px, 100%); height: min(88dvh, 900px); display: flex; flex-direction: column; background: #0e1a2e; border: 1px solid rgba(120, 170, 230, .3); border-radius: 16px; overflow: hidden; box-shadow: 0 24px 70px rgba(0, 0, 0, .55) }
+.landing-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); font-size: 12.5px }
+.landing-actions { display: flex; gap: 6px; align-items: center }
+.landing-actions a { text-decoration: none; color: #9fd8ff; font-size: 11px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 8px }
+.landing-window iframe { flex: 1; width: 100%; border: 0; background: #fff }
+
 /* ---------- missions tab (Mission Control bridge) ---------- */
 .mission-goal { display: grid; gap: 8px; background: rgba(83, 185, 251, .06); border: 1px solid rgba(83, 185, 251, .25); border-radius: 14px; padding: 12px 13px; margin-top: 10px }
 .mission-goal .field { margin: 0 }

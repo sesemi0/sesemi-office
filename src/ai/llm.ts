@@ -4,6 +4,8 @@
  * OpenAI-compatible endpoint (OpenAI, OpenRouter, GLM…) is supported too.
  */
 
+import type { TaskKind } from '../sim/agents';
+
 export type ProviderKind = 'gemini' | 'openai-compat';
 
 export interface AiConfig {
@@ -117,7 +119,7 @@ export async function runCompletion(config: AiConfig, system: string, userPrompt
 }
 
 /** Per-task prompt builders — the office work contracts. */
-export function taskPrompt(kind: 'email' | 'content' | 'research' | 'schedule', detail: string): string {
+export function taskPrompt(kind: TaskKind, detail: string): string {
   switch (kind) {
     case 'email':
       return `یک ایمیل فارسیِ حرفه‌ای بنویس.\nدرخواست: ${detail}\nقالب: موضوع + بدنهٔ کامل + امضای «تیم سسِمی». لحن: گرم، حرفه‌ای، بدون اغراق.`;
@@ -127,6 +129,8 @@ export function taskPrompt(kind: 'email' | 'content' | 'research' | 'schedule', 
       return `یک گزارش تحقیقی فارسی کوتاه (حداکثر ۴۰۰ کلمه) تهیه کن.\nموضوع: ${detail}\nساختار: خلاصهٔ یک‌خطی، ۳ نکتهٔ کلیدی، جمع‌بندی عملی. اگر چیزی مطمئن نیستی صریح بگو «نیاز به راستی‌آزمایی».`;
     case 'schedule':
       return `یک برنامهٔ اجرایی فارسی بچین.\nهدف: ${detail}\nخروجی: جدول زمانی گام‌به‌گام با تخمین زمان و مسئول پیشنهادی. کوتاه و قابل اجرا.`;
+    case 'web':
+      return `یک صفحهٔ لندینگ کامل و آمادهٔ انتشار بساز.\nدرخواست: ${detail}\n\nالزامات سخت:\n- خروجی فقط و فقط کد HTML خام باشد؛ هیچ توضیح، متن اضافه یا بلوک markdown (بک‌تیک) ننویس.\n- یک فایل HTML کامل با <!DOCTYPE html>، <style> داخلی و <script> داخلی (در صورت نیاز) — بدون وابستگی خارجی.\n- زبان محتوای صفحه همان زبانی باشد که کاربر خواسته (اگر انگلیسی خواسته، کل صفحه انگلیسی باشد).\n- طراحی مدرن و مینیمال با هویت برند سسِمی: پس‌زمینه تیرهٔ سرمه‌ای (#0b1220)، اکسنت آبی (#48b9ff)، فونت سیستمی، hero با تیتر قوی، بخش ویژگی‌ها، CTA و فرم تماس/سفارش ساده، ریسپانسیو با media query.\n- کاملاً کارا باشد: لینک‌ها و فرم با جاوااسکریپت داخلی یک پیام موفقیت نشان بدهند.`;
   }
 }
 
@@ -150,7 +154,7 @@ function hashString(input: string): number {
 const DEMO_HEADER = '⚠️ نمایشی — این خروجی بدون کلید API تولید شده است.';
 const DEMO_FOOTER = '(نمایشی — برای کار واقعی کلید AI بده)';
 
-type DemoKind = 'email' | 'content' | 'research' | 'schedule';
+type DemoKind = 'email' | 'content' | 'research' | 'schedule' | 'web';
 
 /** مخزن قالب نمایشی: ۳ واریانت باکیفیت فارسی برای هر kind — agentName و لحن نقش را بازتاب می‌دهد. */
 const DEMO_TEMPLATES: Record<DemoKind, ((agentName: string, persona: string, detail: string) => string)[]> = {
@@ -307,8 +311,43 @@ export async function runDemoCompletion(
   const seed = hashString(`${kind}::${agentName}::${detail}`);
   const delay = 4200 + (seed % 3601); // 4200..7800ms
   await new Promise(resolve => setTimeout(resolve, delay));
+  // وظیفهٔ وب در حالت نمایشی: خروجی خام HTML بدون سرصفحه/پاصفحهٔ نمایشی
+  if (kind === 'web') return demoWebPage(detail);
   const persona = agentPersona.replace(/^رویکردت:\s*/, '').trim() || 'استاندارد برند';
   const variants = DEMO_TEMPLATES[kind];
   const body = variants[seed % variants.length](agentName, persona, detail);
   return `${DEMO_HEADER}\n\n${body}\n\n${DEMO_FOOTER}`;
+}
+
+/** صفحهٔ نمایشیِ خام برای وظیفهٔ وب — یک لندینگ واقعی تک‌فایلی بر اساس درخواست */
+function demoWebPage(detail: string): string {
+  const title = (detail.split('\n')[0] || 'Landing Page').slice(0, 80);
+  const esc = title.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc}</title><style>
+*{margin:0;box-sizing:border-box}body{font-family:system-ui,sans-serif;background:#0b1220;color:#e8f0fa;line-height:1.7}
+.hero{padding:90px 24px;text-align:center;background:radial-gradient(ellipse at 50% -20%,#17304f,#0b1220 70%)}
+h1{font-size:clamp(30px,6vw,54px);letter-spacing:-.5px}h1 span{color:#48b9ff}
+p.sub{color:#93a8c4;max-width:560px;margin:14px auto 28px;font-size:16px}
+.btn{display:inline-block;background:#48b9ff;color:#04121f;font-weight:700;padding:13px 30px;border-radius:12px;text-decoration:none}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;max-width:960px;margin:50px auto;padding:0 24px}
+.card{background:#101d33;border:1px solid #223c5c;border-radius:14px;padding:22px}
+.card b{color:#7cc7f5}
+form{max-width:520px;margin:40px auto;padding:0 24px;display:grid;gap:10px}
+input{background:#0e1a2e;border:1px solid #223c5c;border-radius:10px;padding:12px 14px;color:#e8f0fa}
+footer{text-align:center;color:#5f7a99;font-size:12px;padding:30px}
+.ok{color:#7ee2b8;display:none;text-align:center}
+</style></head><body>
+<div class="hero"><h1>Delivered by <span>SESEMI</span> AI team</h1><p class="sub">${esc} — demo landing page built by the office agents (add your API key for a fully custom page).</p><a class="btn" href="#order">Get started</a></div>
+<div class="grid">
+<div class="card"><b>Fast</b><br>Built in minutes, not weeks.</div>
+<div class="card"><b>Responsive</b><br>Looks right on every screen.</div>
+<div class="card"><b>On brand</b><br>SESEMI visual language end to end.</div>
+</div>
+<form id="f" onsubmit="event.preventDefault();this.style.display='none';document.getElementById('ok').style.display='block'">
+<input placeholder="Your name" required><input type="email" placeholder="Email" required><button class="btn" style="border:0;cursor:pointer">Order now</button></form>
+<p class="ok" id="ok">✅ Thanks! Your order was received.</p>
+<footer>SESEMI Office · demo output — add an API key for real AI pages</footer>
+</body></html>`;
 }

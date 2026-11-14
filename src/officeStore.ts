@@ -478,7 +478,7 @@ export class OfficeStore {
       agentName,
       agentRole,
       status,
-      result: task.result,
+      result: task.kind === 'web' && task.resultHtml ? task.resultHtml : task.result,
     }]);
   }
 
@@ -552,6 +552,27 @@ export class OfficeStore {
   /** یک رندر بلافاصله — برای بازخوردهای خارج از چرخهٔ tick */
   nudge(): void {
     this.emit();
+  }
+
+  /** وظیفهٔ «ساخت وب‌سایت»: کد HTML را از پاسخ بیرون می‌کشد و result را خلاصهٔ خوانا می‌کند */
+  private finalizeWeb(task: Task): void {
+    if (task.kind !== 'web' || !task.result) return;
+    let html = task.result.trim();
+    const fenceStart = html.indexOf('```');
+    if (fenceStart >= 0) {
+      const fenceEnd = html.lastIndexOf('```');
+      html = html.slice(fenceStart + 3, fenceEnd > fenceStart ? fenceEnd : undefined).trim();
+      if (html.startsWith('html')) html = html.slice(4).trim();
+    }
+    const doctype = html.indexOf('<!DOCTYPE');
+    const htmlTag = html.toLowerCase().indexOf('<html');
+    const start = doctype >= 0 ? doctype : htmlTag;
+    if (start > 0) html = html.slice(start);
+    const looksHtml = doctype >= 0 || htmlTag >= 0
+      || html.includes('<div') || html.includes('<section') || html.includes('<body');
+    if (!looksHtml) return; // مدل کد نداد — همان متن بماند
+    task.resultHtml = html;
+    task.result = 'صفحه ساخته شد — «پیش‌نمایش صفحه» را باز کن؛ کد کامل داخل همان پنجره است.';
   }
 
   /** کار ۲ — گزارش روزانه؛ pure و بدون side-effect، برای رندر مستقیم پنل. */
@@ -750,6 +771,7 @@ export class OfficeStore {
           t2.finishedAt = Date.now();
           a2.bubble = 'تمام شد! ✓';
           a2.celebrateAt = Date.now();
+          this.finalizeWeb(t2);
           a2.state = 'idle';
           a2.currentSpot = undefined;
           a2.taskId = undefined;
@@ -778,6 +800,7 @@ export class OfficeStore {
         t2.finishedAt = Date.now();
         a2.bubble = 'تمام شد! ✓';
         a2.celebrateAt = Date.now();
+        this.finalizeWeb(t2);
         a2.state = 'idle';
         a2.currentSpot = undefined;
         a2.taskId = undefined;
@@ -801,6 +824,7 @@ export class OfficeStore {
             t2.finishedAt = Date.now();
             a2.bubble = 'تمام شد! ✓';
             a2.celebrateAt = Date.now();
+            this.finalizeWeb(t2);
             a2.celebrateAt = Date.now();
             this.log(keyIssue
               ? `کلید API نامعتبر بود — ${a2.name} خروجی نمایشی داد. برای کار واقعی کلید جدید در تنظیمات بده.`
@@ -884,7 +908,7 @@ export class OfficeStore {
 }
 
 const TASK_TITLE_FALLBACK: Record<TaskKind, string> = {
-  email: 'ایمیل جدید', content: 'تولید محتوا', research: 'گزارش تحقیقی', schedule: 'برنامه‌ریزی',
+  email: 'ایمیل جدید', content: 'تولید محتوا', research: 'گزارش تحقیقی', schedule: 'برنامه‌ریزی', web: 'صفحهٔ لندینگ',
 };
 
 declare module './sim/agents' {

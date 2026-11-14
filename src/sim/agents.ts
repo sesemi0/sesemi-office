@@ -9,13 +9,14 @@ export type Role = 'manager' | 'writer' | 'researcher' | 'assistant';
 
 export interface RoleMeta { label: string; color: string; tasks: TaskKind[]; system: string }
 
-export type TaskKind = 'email' | 'content' | 'research' | 'schedule';
+export type TaskKind = 'email' | 'content' | 'research' | 'schedule' | 'web';
 
 export const TASK_LABELS: Record<TaskKind, string> = {
   email: 'ایمیل و مکاتبات',
   content: 'تولید محتوا',
   research: 'تحقیق و گزارش',
   schedule: 'برنامه‌ریزی و زمان‌بندی',
+  web: 'ساخت وب‌سایت',
 };
 
 export const ROLE_META: Record<Role, RoleMeta> = {
@@ -24,7 +25,7 @@ export const ROLE_META: Record<Role, RoleMeta> = {
     system: 'تو مدیرِ یک شرکت کوچک هستی. پاسخ‌ها را خلاصه، مدیریتی و عملی بنویس.',
   },
   writer: {
-    label: 'نویسندهٔ محتوا', color: '#b8a5ea', tasks: ['content', 'email'],
+    label: 'نویسندهٔ محتوا', color: '#b8a5ea', tasks: ['content', 'email', 'web'],
     system: 'تو نویسندهٔ محتوای یک استودیوی خلاق هستی. متن‌ها را جذاب، تمیز و آمادهٔ انتشار بنویس.',
   },
   researcher: {
@@ -77,8 +78,8 @@ export interface Task {
   missionCode?: string;
   /** متن اصلی وظیفهٔ مأموریت که این کار از آن ساخته شد */
   missionTask?: string;
-  /** timestamp تحویل — رندرر پرش + کانفتی جشن را تا ۱.۳ ثانیه اجرا می‌کند */
-  celebrateAt?: number;
+  /** خروجی HTML خام برای وظایف «ساخت وب‌سایت» — پیش‌نمایش/دانلود در UI */
+  resultHtml?: string;
 }
 
 /** خروجی تخصیص مدیریتی: id وظیفهٔ والد (آرش) + فرزندان ساخته‌شده */
@@ -118,6 +119,7 @@ export const BRIEF_KEYWORDS: Record<TaskKind, string[]> = {
   content: ['محتوا', 'کپشن', 'پست', 'مقاله', 'متن', 'اینستاگرام', 'لینکدین'],
   research: ['تحقیق', 'گزارش', 'تحلیل', 'رقبا', 'ترند', 'بازار', 'مطالعه'],
   schedule: ['برنامه', 'زمان', 'تقویم', 'اولویت', 'جلسهٔ', 'وقت‌بندی'],
+  web: ['لندینگ', 'سایت', 'وب‌سایت', 'وب ', 'landing', 'website', 'پیج', 'فرم', 'آنلاین بساز', 'رستوران', 'فروشگاه'],
 };
 
 /** تعداد تکرارهای زیررشته‌ای غیرهم‌پوشان (هر تکرار ۱ امتیاز — مشتق‌های فارسی مثل «ایمیل‌ها» هم match می‌شوند). */

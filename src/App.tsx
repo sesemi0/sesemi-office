@@ -151,10 +151,30 @@ function ResultActions({ text }: { text: string }) {
   </div>;
 }
 
+/** پنجرهٔ پیش‌نمایش صفحهٔ ساخته‌شدهٔ ایجنت (iframe ایزوله + دانلود) */
+function LandingPreview({ html, onClose }: { html: string; onClose: () => void }) {
+  const blob = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+  useEffect(() => () => URL.revokeObjectURL(blob), [blob]);
+  return <div className="landing-scrim" role="dialog" aria-modal="true" aria-label="پیش‌نمایش صفحهٔ ساخته‌شده">
+    <div className="landing-window">
+      <div className="landing-bar">
+        <strong>پیش‌نمایش صفحهٔ ساخته‌شده</strong>
+        <div className="landing-actions">
+          <a className="ghost mini" href={blob} target="_blank" rel="noopener noreferrer">تب جدید</a>
+          <a className="ghost mini" href={blob} download="sesemi-landing.html">دانلود HTML</a>
+          <button className="ghost card-close" onClick={onClose} aria-label="بستن">✕</button>
+        </div>
+      </div>
+      <iframe title="پیش‌نمایش لندینگ" srcDoc={html} sandbox="allow-scripts allow-forms" />
+    </div>
+  </div>;
+}
+
 function TaskResult({ task, agent, agents = [], delegationKids = [] }: {
   task: Task; agent?: Agent; agents?: Agent[]; delegationKids?: Task[];
 }) {
   const [open, setOpen] = useState(false);
+  const [preview, setPreview] = useState(false);
   return <div className={`task-row ${task.status}`}>
     <div className="task-row-head" onClick={() => setOpen(!open)}>
       <span className="task-title">{task.title}
@@ -183,9 +203,11 @@ function TaskResult({ task, agent, agents = [], delegationKids = [] }: {
     {task.result && open && <ResultActions text={task.result} />}
     <div className="task-actions">
       {task.result && <button className="ghost" onClick={() => setOpen(!open)}>{open ? 'بستن نتیجه' : 'دیدن نتیجه'}</button>}
+      {task.resultHtml && <button className="primary mini" onClick={() => setPreview(true)}>پیش‌نمایش صفحه</button>}
       {task.status === 'failed' && <button className="ghost mini" onClick={() => store.retryTask(task.id)}>تلاش دوباره</button>}
       {task.status !== 'done' && task.status !== 'failed' && <button className="ghost mini danger" onClick={() => store.cancelTask(task.id)}>لغو</button>}
     </div>
+    {preview && task.resultHtml && <LandingPreview html={task.resultHtml} onClose={() => setPreview(false)} />}
   </div>;
 }
 
