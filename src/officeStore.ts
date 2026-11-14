@@ -544,6 +544,7 @@ export class OfficeStore {
     agent.to = { ...path[0] };
     agent.moveT = 0;
     agent.bubble = 'رفتم! 🚶';
+    this.log(`${agent.name} به نقطهٔ جدیدی منتقل شد.`);
     this.emit();
     return true;
   }
