@@ -206,6 +206,8 @@ button.danger.ghost { margin-top: 14px; width: 100%; border: 1px solid #5d2e38; 
 
 /* ---------- light theme (data-ui on .app-shell) ---------- */
 .app-shell.light-ui { --ui-bg: #eef2f8; --ui-surface: #ffffff; --ui-text: #16263c; --ui-muted: #5b6e88; --ui-line: rgba(30, 60, 100, .16); --ui-panel: rgba(255, 255, 255, .92) }
+/* همهٔ سطوحی که از متغیرهای ریشه می‌خوانند هم روشن شوند */
+.app-shell.light-ui { --bg: #eef2f8; --panel: #ffffff; --panel-2: #f4f7fc; --line: rgba(30, 60, 100, .16); --fg: #16263c; --muted: #5b6e88; color-scheme: light }
 .app-shell.light-ui { background: var(--ui-bg); color: var(--ui-text) }
 .app-shell.light-ui .topbar { background: rgba(255, 255, 255, .9); border-bottom-color: var(--ui-line) }
 .app-shell.light-ui .brand-hint { color: var(--ui-muted) }
