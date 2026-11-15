@@ -204,6 +204,30 @@ button.danger.ghost { margin-top: 14px; width: 100%; border: 1px solid #5d2e38; 
 .landing-actions a { text-decoration: none; color: #9fd8ff; font-size: 11px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 8px }
 .landing-window iframe { flex: 1; width: 100%; border: 0; background: #fff }
 
+/* ---------- light theme (data-ui on .app-shell) ---------- */
+.app-shell.light-ui { --ui-bg: #eef2f8; --ui-surface: #ffffff; --ui-text: #16263c; --ui-muted: #5b6e88; --ui-line: rgba(30, 60, 100, .16); --ui-panel: rgba(255, 255, 255, .92) }
+.app-shell.light-ui { background: var(--ui-bg); color: var(--ui-text) }
+.app-shell.light-ui .topbar { background: rgba(255, 255, 255, .9); border-bottom-color: var(--ui-line) }
+.app-shell.light-ui .brand-hint { color: var(--ui-muted) }
+.app-shell.light-ui .ghost { color: var(--ui-text) }
+.app-shell.light-ui .office-wrap { background: radial-gradient(ellipse at 50% 30%, #dfe9f6, #c9d8ec 75%) }
+.app-shell.light-ui .side-col { background: var(--ui-surface) }
+.app-shell.light-ui .tabbar { background: var(--ui-surface) }
+.app-shell.light-ui .tabbar button { color: var(--ui-muted) }
+.app-shell.light-ui .tabbar button.on { color: var(--ui-text) }
+.app-shell.light-ui .panel, .app-shell.light-ui .agent-card, .app-shell.light-ui .mission-card, .app-shell.light-ui .mission-goal, .app-shell.light-ui .welcome-card { background: var(--ui-panel); border-color: var(--ui-line); color: var(--ui-text) }
+.app-shell.light-ui .panel-hint, .app-shell.light-ui .field-hint, .app-shell.light-ui .task-meta, .app-shell.light-ui .empty, .app-shell.light-ui .welcome-line2, .app-shell.light-ui .welcome-hint, .app-shell.light-ui .report-agent-preview { color: var(--ui-muted) }
+.app-shell.light-ui .task-row, .app-shell.light-ui .report-agent { background: #fff; border-color: var(--ui-line) }
+.app-shell.light-ui .task-detail { color: var(--ui-muted) }
+.app-shell.light-ui .field input, .app-shell.light-ui .field textarea, .app-shell.light-ui .field select { background: #fff; border-color: var(--ui-line); color: var(--ui-text) }
+.app-shell.light-ui .demo-banner { background: #fff7e8; color: #7a5200; border-color: #e5c877 }
+.app-shell.light-ui .form-ok { color: #1d7a4f }
+.app-shell.light-ui .feed-item { color: var(--ui-text) }
+.app-shell.light-ui .lang-switch { border-color: var(--ui-line) }
+.app-shell.light-ui .lang-switch button { color: var(--ui-muted) }
+.app-shell.light-ui .lang-switch button.on { background: #1668c9; color: #fff }
+.app-shell.light-ui .office-chip, .app-shell.light-ui .office-corner { color: #4a648a }
+
 /* ---------- missions tab (Mission Control bridge) ---------- */
 .mission-goal { display: grid; gap: 8px; background: rgba(83, 185, 251, .06); border: 1px solid rgba(83, 185, 251, .25); border-radius: 14px; padding: 12px 13px; margin-top: 10px }
 .mission-goal .field { margin: 0 }

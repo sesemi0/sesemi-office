@@ -47,17 +47,32 @@ export async function createMissionFromGoal(goal: string): Promise<{ code: strin
   return { code: data.mission_code, reply: data.reply_text || '' };
 }
 
-/** the panel's own webhook, text-board format */
-export async function fetchMissionBoard(): Promise<Mission[]> {
-  const response = await fetch(`${N8N_WEBHOOK}/sesemi-mission-status`, {
-    method: 'POST',
-    headers: { 'content-type': 'text/plain' },
-    body: JSON.stringify({}),
-    signal: AbortSignal.timeout(30000),
-  });
-  if (!response.ok) throw new Error(`Mission Control پاسخ ${response.status} داد.`);
+/** the panel's own webhook, text-board format — on failure the last good board is served from cache */
+export async function fetchMissionBoard(): Promise<{ missions: Mission[]; stale: boolean }> {
+  const CACHE_KEY = 'sesemi-office-board-cache';
+  let response: Response;
+  try {
+    response = await fetch(`${N8N_WEBHOOK}/sesemi-mission-status`, {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain' },
+      body: JSON.stringify({}),
+      signal: AbortSignal.timeout(30000),
+    });
+  } catch (error) {
+    return { missions: readCachedBoard(CACHE_KEY), stale: true };
+  }
+  if (!response.ok) return { missions: readCachedBoard(CACHE_KEY), stale: true };
   const data = await response.json() as { reply_text?: string };
-  return parseMissionBoard(data.reply_text || '');
+  const missions = parseMissionBoard(data.reply_text || '');
+  try { localStorage.setItem(CACHE_KEY, data.reply_text || ''); } catch { /* private mode */ }
+  return { missions, stale: false };
+}
+
+function readCachedBoard(cacheKey: string): Mission[] {
+  try {
+    const raw = localStorage.getItem(cacheKey);
+    return raw ? parseMissionBoard(raw) : [];
+  } catch { return []; }
 }
 
 /** parse the mission board text into structured missions */

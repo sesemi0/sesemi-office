@@ -18,6 +18,27 @@ const FLOOR_A = '#16233c';
 const FLOOR_B = '#131f36';
 const ACCENT = '#53b9fb';
 
+/* ---------- light/dark theme (canvas palette) ---------- */
+
+export type OfficeTheme = 'dark' | 'light';
+let canvasTheme: OfficeTheme = (() => {
+  try { return localStorage.getItem('sesemi-office-theme') === 'light' ? 'light' : 'dark'; } catch { return 'dark'; }
+})();
+
+/** سوییچ تم بوم — از App صدا زده می‌شود؛ انتخاب در localStorage می‌ماند */
+export function setOfficeTheme(theme: OfficeTheme): void {
+  canvasTheme = theme;
+  try { localStorage.setItem('sesemi-office-theme', theme); } catch { /* private mode */ }
+}
+export function getOfficeTheme(): OfficeTheme { return canvasTheme; }
+
+interface CanvasPalette { fA: string; fB: string; wall: string; wallTop: string; grid: string; window: string; tagBg: string }
+function pal(): CanvasPalette {
+  return canvasTheme === 'light'
+    ? { fA: '#e8edf5', fB: '#dfe7f2', wall: '#b6c8de', wallTop: '#cfdeee', grid: 'rgba(30,60,100,.12)', window: 'rgba(70,120,180,.5)', tagBg: 'rgba(245,250,255,.88)' }
+    : { fA: FLOOR_A, fB: FLOOR_B, wall: '#1d2c4a', wallTop: '#25395f', grid: 'rgba(83,185,251,.06)', window: 'rgba(124,208,255,.75)', tagBg: 'rgba(6,12,25,.72)' };
+}
+
 /** legacy helper — the classic unrotated iso projection */
 export function isoOf(x: number, y: number): Vec2 {
   return { x: (x - y) * (TILE_W / 2), y: (x + y) * (TILE_H / 2) };
@@ -315,7 +336,8 @@ function drawReception(ctx: CanvasRenderingContext2D, x: number, y: number): voi
 /* ---------- walls (with night windows) ---------- */
 
 function drawWall(ctx: CanvasRenderingContext2D, x: number, y: number, lamps: boolean): void {
-  drawBox(ctx, x, y, 0, 0, 1, 1, WALL_H, '#25395f', '#1d2c4a');
+  const p = pal();
+  drawBox(ctx, x, y, 0, 0, 1, 1, WALL_H, p.wallTop, p.wall);
   // پنجره فقط روی وجه‌های رو‌به‌دوربین — وجه پشتی شیشه شناور «ستون» می‌ساخت
   const wallD = depthOf(x + .5, y + .5);
   const perimeter: [number, number][] = [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]];
@@ -328,7 +350,7 @@ function drawWall(ctx: CanvasRenderingContext2D, x: number, y: number, lamps: bo
     const p2 = project(cxw + .18, cyw - .18, WALL_H - 8);
     const p3 = project(cxw + .18, cyw + .18, WALL_H - 8);
     const p4 = project(cxw - .18, cyw + .18, WALL_H - 8);
-    fillQuad(ctx, [p1, p2, p3, p4], lamps ? 'rgba(124,208,255,.75)' : 'rgba(60,90,130,.6)');
+    fillQuad(ctx, [p1, p2, p3, p4], lamps ? 'rgba(124,208,255,.75)' : p.window);
   }
 }
 
@@ -547,8 +569,9 @@ export function render(canvas: HTMLCanvasElement, agents: Agent[], now: number):
     }
   }
   floors.sort((a, b) => a.d - b.d);
+  const p = pal();
   for (const f of floors) {
-    fillQuad(ctx, tileCorners(f.x, f.y), (f.x + f.y) % 2 === 0 ? FLOOR_A : FLOOR_B, 'rgba(83,185,251,.06)');
+    fillQuad(ctx, tileCorners(f.x, f.y), (f.x + f.y) % 2 === 0 ? p.fA : p.fB, p.grid);
   }
 
   /* depth queue: walls + furniture + growth + agents */

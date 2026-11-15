@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import { getLang, onLang, setLang, t, type Lang as UiLang } from './i18n';
 import { store, type OfficeState } from './officeStore';
-import { cameraCtl, fitCamera, initCamera, panBy, pickAgent, pickTile, render, resetView, rotateBy, setFollow, stepEffects, zoomAt } from './render/officeCanvas';
+import { cameraCtl, fitCamera, getOfficeTheme, initCamera, panBy, pickAgent, pickTile, render, resetView, rotateBy, setFollow, setOfficeTheme, stepEffects, zoomAt } from './render/officeCanvas';
 import { ROLE_META, TASK_LABELS, type Agent, type Role, type Task, type TaskKind } from './sim/agents';
 import { isDemoMode, loadConfig, saveConfig, GEMINI_MODELS, OPENAI_COMPAT_MODELS, type AiConfig, type ProviderKind } from './ai/llm';
 import {
@@ -21,9 +22,10 @@ function StatusDot({ state }: { state: Agent['state'] }) {
   return <span className="status-dot" style={{ background: color }} title={state} />;
 }
 
-const STATE_LABELS: Record<Agent['state'], string> = {
-  idle: 'آماده', walking: 'در حال رفتن', working: 'در حال کار', meeting: 'جلسه', coffee: 'قهوه', arriving: 'رسیدن',
+const STATE_KEYS: Record<Agent['state'], string> = {
+  idle: 'state.idle', walking: 'state.walking', working: 'state.working', meeting: 'state.meeting', coffee: 'state.coffee', arriving: 'state.arriving',
 };
+const stateLabel = (s: Agent['state']): string => t(STATE_KEYS[s]);
 
 function timeOf(at: number): string {
   return new Date(at).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
@@ -53,7 +55,7 @@ const QUICK_TASKS: Record<Role, { label: string; kind: TaskKind; detail: string 
 
 function AgentsPanel({ state }: { state: OfficeState }) {
   return <div className="panel">
-    <h2>تیم دفتر <span className="panel-hint">{state.agents.length} ایجنت — برای شخصی‌سازی روی هرکدام بزن</span></h2>
+    <h2>{t('team.title')} <span className="panel-hint">{state.agents.length} — {t('team.hint')}</span></h2>
     <div className="agent-list">
       {state.agents.map(agent => <button className="agent-row" key={agent.id} onClick={() => (window as unknown as { __openAgent: (id: string) => void }).__openAgent(agent.id)}>
         <Avatar agent={agent} />
@@ -61,7 +63,7 @@ function AgentsPanel({ state }: { state: OfficeState }) {
           <strong>{agent.name}</strong>
           <small>{ROLE_META[agent.role].label}</small>
         </span>
-        <span className="agent-row-status"><StatusDot state={agent.state} />{STATE_LABELS[agent.state]}</span>
+        <span className="agent-row-status"><StatusDot state={agent.state} />{stateLabel(agent.state)}</span>
       </button>)}
     </div>
   </div>;
@@ -98,38 +100,38 @@ function TaskForm({ state }: { state: OfficeState }) {
   }
 
   return <div className="panel">
-    <h2>دادن وظیفه</h2>
+    <h2>{t('form.title')}</h2>
     <div className="recip-switch" role="radiogroup" aria-label="گیرندهٔ وظیفه">
-      <button type="button" className={toManager ? '' : 'on'} onClick={() => setToManager(false)}>ایجنت مشخص</button>
-      <button type="button" className={toManager ? 'on' : ''} onClick={() => setToManager(true)}>آرش — تخصیص خودکار</button>
+      <button type="button" className={toManager ? '' : 'on'} onClick={() => setToManager(false)}>{t('form.specific')}</button>
+      <button type="button" className={toManager ? 'on' : ''} onClick={() => setToManager(true)}>{t('form.auto')}</button>
     </div>
-    <label className="field">ایجنت
+    <label className="field">{t('form.agent')}
       <select value={agentId} disabled={toManager} onChange={e => setAgentId(e.target.value)}>
         {state.agents.map(a => <option key={a.id} value={a.id}>{a.name} — {ROLE_META[a.role].label}</option>)}
       </select>
     </label>
-    {toManager && <small className="field-hint">آرش بر اساس نوع کار بین تیم تقسیم می‌کند.</small>}
-    {!toManager && <label className="field">نوع کار
+    {toManager && <small className="field-hint">{t('form.autoHint')}</small>}
+    {!toManager && <label className="field">{t('form.kind')}
       <select value={kind} onChange={e => setKind(e.target.value as TaskKind)}>
         {Object.entries(TASK_LABELS).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
       </select>
     </label>}
-    <label className="field">عنوان <small>اختیاری</small>
+    <label className="field">{t('form.titleField')} <small>{t('form.optional')}</small>
       <input value={title} onChange={e => setTitle(e.target.value)} placeholder="مثلاً: پاسخ به درخواست قیمت" />
     </label>
-    <label className="field">خواستهٔ تو
+    <label className="field">{t('form.ask')}
       <textarea value={detail} onChange={e => setDetail(e.target.value)} rows={3}
-        placeholder="مثلاً: به مشتری که سفارش طراحی سایت پرسیده، یک پاسخ گرم با اشاره به زمان‌بندی بنویس" />
+        placeholder={t('form.askPlaceholder')} />
     </label>
     {error && <p className="form-error" role="alert">{error}</p>}
     {ok && <p className="form-ok" role="status">{ok}</p>}
-    <button className="primary" onClick={submit} disabled={busy}>{toManager ? 'سپردن بریف به آرش' : 'سپردن وظیفه به ایجنت'}</button>
+    <button className="primary" onClick={submit} disabled={busy}>{toManager ? t('form.submitBoss') : t('form.submit')}</button>
   </div>;
 }
 
 function FeedPanel({ state }: { state: OfficeState }) {
   return <div className="panel">
-    <h2>فعالیت زندهٔ دفتر <button className="ghost" onClick={() => store.clearFeed()}>پاک‌کردن</button></h2>
+    <h2>{t('feed.title')} <button className="ghost" onClick={() => store.clearFeed()}>{t('feed.clear')}</button></h2>
     <div className="feed">
       {state.feed.length === 0 && <p className="empty">هنوز خبری نیست…</p>}
       {state.feed.map(ev => <div className="feed-row" key={ev.id}>
@@ -202,10 +204,10 @@ function TaskResult({ task, agent, agents = [], delegationKids = [] }: {
     {task.result && open && <div className="task-result">{task.result}</div>}
     {task.result && open && <ResultActions text={task.result} />}
     <div className="task-actions">
-      {task.result && <button className="ghost" onClick={() => setOpen(!open)}>{open ? 'بستن نتیجه' : 'دیدن نتیجه'}</button>}
-      {task.resultHtml && <button className="primary mini" onClick={() => setPreview(true)}>پیش‌نمایش صفحه</button>}
-      {task.status === 'failed' && <button className="ghost mini" onClick={() => store.retryTask(task.id)}>تلاش دوباره</button>}
-      {task.status !== 'done' && task.status !== 'failed' && <button className="ghost mini danger" onClick={() => store.cancelTask(task.id)}>لغو</button>}
+      {task.result && <button className="ghost" onClick={() => setOpen(!open)}>{open ? t('common.closeResult') : t('common.viewResult')}</button>}
+      {task.resultHtml && <button className="primary mini" onClick={() => setPreview(true)}>{t('preview.title')}</button>}
+      {task.status === 'failed' && <button className="ghost mini" onClick={() => store.retryTask(task.id)}>{t('common.retry')}</button>}
+      {task.status !== 'done' && task.status !== 'failed' && <button className="ghost mini danger" onClick={() => store.cancelTask(task.id)}>{t('common.cancel')}</button>}
     </div>
     {preview && task.resultHtml && <LandingPreview html={task.resultHtml} onClose={() => setPreview(false)} />}
   </div>;
@@ -213,8 +215,8 @@ function TaskResult({ task, agent, agents = [], delegationKids = [] }: {
 
 function TasksPanel({ state }: { state: OfficeState }) {
   return <div className="panel">
-    <h2>وظایف</h2>
-    {state.tasks.length === 0 && <p className="empty">هنوز وظیفه‌ای نداده‌ای — از پنل «دادن وظیفه» شروع کن.</p>}
+    <h2>{t('tasks.title')}</h2>
+    {state.tasks.length === 0 && <p className="empty">{t('tasks.empty')}</p>}
     <div className="task-list">{state.tasks.map(task =>
       <TaskResult key={task.id} task={task} agent={state.agents.find(a => a.id === task.agentId)} agents={state.agents}
         delegationKids={task.isDelegation ? state.tasks.filter(t => t.delegationId === task.id) : []} />)}
@@ -237,7 +239,7 @@ function AgentCard({ state, agentId, onClose }: { state: OfficeState; agentId: s
       <Avatar agent={agent} size={40} />
       <div className="agent-card-id">
         <strong>{agent.name}</strong>
-        <span>{ROLE_META[agent.role].label} · <StatusDot state={agent.state} /> {STATE_LABELS[agent.state]}</span>
+        <span>{ROLE_META[agent.role].label} · <StatusDot state={agent.state} /> {stateLabel(agent.state)}</span>
       </div>
       <button className="ghost card-close" onClick={onClose} aria-label="بستن">✕</button>
     </div>
@@ -271,7 +273,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
     <div className="modal" onClick={e => e.stopPropagation()}>
       <h2>تنظیمات هوش مصنوعی (کلید خودت)</h2>
       {isDemoMode(config) && <div className="demo-banner-inline">
-        <span>حالت نمایش فعال است — ایجنت‌ها خروجی نمایشی می‌دهند. کلیدت را وارد کن تا واقعی شوند.</span>
+        <span>{t('banner.demo')}</span>
         <button className="ghost" onClick={() => keyRef.current?.focus()}>رفتن به فیلد کلید</button>
       </div>}
       <p className="hint">کلید فقط در همین مرورگر خودت ذخیره می‌شود و فقط به سرویس‌دهنده‌ای که انتخاب می‌کنی فرستاده می‌شود.</p>
@@ -360,7 +362,7 @@ function OfficePanel({ state }: { state: OfficeState }) {
   }
 
   return <div className="panel">
-    <h2>دفتر مدیر</h2>
+    <h2>{t('office.title')}</h2>
 
     <div className="brief-card">
       <div className="brief-card-head">
@@ -373,15 +375,15 @@ function OfficePanel({ state }: { state: OfficeState }) {
       {noWorkToday
         ? <>
             <p className="field-hint">امروز هنوز کاری ثبت نشده — اول وظیفه‌ای بده تا بریفینگ معنا پیدا کند.</p>
-            <button className="primary" disabled>تولید بریفینگ</button>
+            <button className="primary" disabled>{t('office.generate')}</button>
           </>
         : <div className="brief-actions-row">
-            <button className="primary" onClick={() => make()} disabled={loading}>{loading ? 'در حال تولید…' : 'تولید بریفینگ'}</button>
+            <button className="primary" onClick={() => make()} disabled={loading}>{loading ? t('office.generating') : t('office.generate')}</button>
             <button className="ghost" onClick={() => make(true)} disabled={loading}>تازه‌سازی</button>
           </div>}
     </div>
 
-    <h3 className="office-sub">خلاصهٔ روز</h3>
+    <h3 className="office-sub">{t('office.summary')}</h3>
     <div className="report-stats">
       <div className="report-stat"><b>{report.totalDone}</b><span>انجام شد</span></div>
       <div className="report-stat failed"><b>{report.totalFailed}</b><span>ناموفق</span></div>
@@ -404,7 +406,7 @@ function OfficePanel({ state }: { state: OfficeState }) {
       })}
     </div>
 
-    <h3 className="office-sub">گزارش‌های ایجنت‌ها</h3>
+    <h3 className="office-sub">{t('office.reports')}</h3>
     {report.reportTasks.length === 0
       ? <p className="empty">امروز هنوز وظیفه‌ای تمام نشده…</p>
       : <div className="task-list">{report.reportTasks.map(task =>
@@ -415,15 +417,16 @@ function OfficePanel({ state }: { state: OfficeState }) {
 
 /* ---------- missions (Mission Control bridge) ---------- */
 
-const MISSION_STATUS_META: Record<MissionTaskStatus, { label: string; cls: string }> = {
-  done: { label: 'انجام شد', cls: 'ok' },
-  failed: { label: 'ناموفق', cls: 'err' },
-  active: { label: 'فعال', cls: 'run' },
-  queued: { label: 'در صف', cls: 'wait' },
+const MISSION_STATUS_META: Record<MissionTaskStatus, { key: string; cls: string }> = {
+  done: { key: 'status.done', cls: 'ok' },
+  failed: { key: 'status.failed', cls: 'err' },
+  active: { key: 'status.active', cls: 'run' },
+  queued: { key: 'status.queued', cls: 'wait' },
 };
 
 function MissionsPanel() {
   const [missions, setMissions] = useState<Mission[] | null>(null);
+  const [stale, setStale] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [adopted, setAdopted] = useState<Set<string>>(() => loadAdoptedKeys());
@@ -435,7 +438,7 @@ function MissionsPanel() {
   async function launchGoal() {
     const text = goal.trim();
     if (!text || creating) return;
-    setCreating(true); setError(''); setFlash('🧠 هوش مصنوعی در حال برنامه‌ریزی است… (حدود ۱۰ ثانیه)');
+    setCreating(true); setError(''); setFlash(t('missions.planning'));
     try {
       const { code } = await createMissionFromGoal(text);
       setGoal('');
@@ -443,17 +446,18 @@ function MissionsPanel() {
       for (let attempt = 0; attempt < 4 && !mission; attempt++) {
         await new Promise(r => setTimeout(r, attempt ? 2500 : 800));
         const board = await fetchMissionBoard();
-        mission = board.find(m => m.code === code);
-        setMissions(board);
+        mission = board.missions.find(m => m.code === code);
+        setMissions(board.missions);
+        setStale(board.stale);
       }
       if (!mission) {
         setFlash(`مأموریت ${code} ساخته شد و تلگرام خبر گرفت — هنوز به تابلو نرسیده؛ چند لحظه بعد «تازه‌سازی» بزن.`);
         return;
       }
-      const fresh = mission.tasks.filter(t => t.status === 'active' || t.status === 'queued');
+      const fresh = mission.tasks.filter(mt => mt.status === 'active' || mt.status === 'queued');
       const sent = store.adoptMission({ ...mission, tasks: fresh });
       const next = new Set(adopted);
-      for (const t of fresh) next.add(adoptedKey(mission.code, t.index));
+      for (const mt of fresh) next.add(adoptedKey(mission.code, mt.index));
       setAdopted(next);
       saveAdoptedKeys(next);
       setFlash(`🎯 مأموریت ${code} با ${sent} کار وارد دفتر شد — ایجنت‌ها همین الان راه می‌افتند. تلگرامت هم برنامه را گرفت.`);
@@ -467,46 +471,46 @@ function MissionsPanel() {
 
   const load = () => {
     setLoading(true);
-    setError('');
     fetchMissionBoard()
-      .then(board => setMissions(board))
+      .then(board => { setMissions(board.missions); setStale(board.stale); })
       .catch(e => setError(e instanceof Error ? e.message : 'خطا در خواندن تابلو'))
       .finally(() => setLoading(false));
   };
   useEffect(load, []);
 
   function handOver(mission: Mission) {
-    const fresh = mission.tasks.filter(t => (t.status === 'active' || t.status === 'queued')
-      && !adopted.has(adoptedKey(mission.code, t.index)));
+    const fresh = mission.tasks.filter(mt => (mt.status === 'active' || mt.status === 'queued')
+      && !adopted.has(adoptedKey(mission.code, mt.index)));
     if (!fresh.length) { setFlash('چیزی برای سپردن نبود — همهٔ وظایف انجام یا سپرده شده‌اند.'); return; }
     const sent = store.adoptMission({ ...mission, tasks: fresh });
     const next = new Set(adopted);
-    for (const t of fresh) next.add(adoptedKey(mission.code, t.index));
+    for (const mt of fresh) next.add(adoptedKey(mission.code, mt.index));
     setAdopted(next);
     saveAdoptedKeys(next);
     setFlash(`${sent} کار از مأموریت ${mission.code} وارد دفتر شد — ایجنت‌ها راه می‌افتند.`);
   }
 
   return <div className="panel">
-    <h2>مأموریت‌ها <span className="panel-hint">زنده از Mission Control</span>
+    <h2>{t('missions.title')} <span className="panel-hint">{t('missions.live')}</span>
       <button className="ghost mini" style={{ marginInlineStart: 'auto' }} onClick={load} disabled={loading}>
-        {loading ? '…' : 'تازه‌سازی'}
+        {loading ? '…' : t('common.refresh')}
       </button>
     </h2>
+    {stale && <p className="form-error" role="status">{t('missions.stale')}</p>}
     <div className="mission-goal">
-      <label className="field">هدف بده به تیم
+      <label className="field">{t('missions.goal')}
         <textarea value={goal} onChange={e => setGoal(e.target.value)} rows={2}
-          placeholder="مثلاً: برای برند قهوه یک فرم سفارش آنلاین بساز، یه لندینگ پیج می‌خوام"
+          placeholder={t('missions.placeholder')}
           disabled={creating} />
       </label>
       <button className="primary" disabled={creating || !goal.trim()} onClick={launchGoal}>
-        {creating ? 'در حال برنامه‌ریزی…' : 'ساخت مأموریت و شروع فوری'}
+        {creating ? t('office.generating') : t('missions.launch')}
       </button>
-      <small className="field-hint">AI برنامه می‌ریزد، تلگرامت خبر می‌گیرد و ایجنت‌ها همان لحظه سر کار می‌روند.</small>
+      <small className="field-hint">{t('missions.launchHint')}</small>
     </div>
     {error && <p className="form-error" role="alert">{error}</p>}
     {flash && <p className="form-ok" role="status">{flash}</p>}
-    {!error && missions && !missions.length && <p className="panel-hint">مأموریتی در تابلو نیست — از پنل یا تلگرام یکی بساز.</p>}
+    {!error && missions && !missions.length && <p className="panel-hint">{t('missions.empty')}</p>}
     <div className="mission-list">
       {(missions ?? []).map(mission => {
         const pending = mission.tasks.filter(t => t.status !== 'done' && t.status !== 'failed');
@@ -517,18 +521,18 @@ function MissionsPanel() {
             <code>{mission.code}</code>
             <span className="mission-count">{mission.done}/{mission.total}</span>
             <button className="primary mini" disabled={allAdopted || !pending.length} onClick={() => handOver(mission)}>
-              {allAdopted ? 'سپرده شد' : 'به دفتر بسپار'}
+              {allAdopted ? t('missions.handed') : t('missions.handOver')}
             </button>
           </div>
           <div className="mission-bar"><span style={{ width: `${pct}%` }} /></div>
           <ul className="mission-tasks">
-            {mission.tasks.map(t => {
-              const meta = MISSION_STATUS_META[t.status];
-              const isAdopted = adopted.has(adoptedKey(mission.code, t.index));
-              return <li key={t.index}>
-                <span className="mission-task-text">{t.text}</span>
-                <span className={`mission-chip ${meta.cls}`}>{meta.label}</span>
-                {isAdopted && t.status !== 'done' && <span className="mission-chip office">در دفتر</span>}
+            {mission.tasks.map(mt => {
+              const meta = MISSION_STATUS_META[mt.status];
+              const isAdopted = adopted.has(adoptedKey(mission.code, mt.index));
+              return <li key={mt.index}>
+                <span className="mission-task-text">{mt.text}</span>
+                <span className={`mission-chip ${meta.cls}`}>{t(meta.key)}</span>
+                {isAdopted && mt.status !== 'done' && <span className="mission-chip office">{t('missions.inOffice')}</span>}
               </li>;
             })}
           </ul>
@@ -543,6 +547,17 @@ function MissionsPanel() {
 
 /* ---------- root ---------- */
 
+/** سوییچ زبان دفتر — فارسی (پیش‌فرض) / EN / ՀԱ */
+function OfficeLangSwitch() {
+  const [, force] = useState(0);
+  useEffect(() => onLang(() => force(x => x + 1)), []);
+  const labels: Record<UiLang, string> = { fa: 'فا', en: 'EN', hy: 'ՀԱ' };
+  return <div className="lang-switch" role="group" aria-label="Language / زبان / Լեզու">
+    {(['fa', 'en', 'hy'] as UiLang[]).map(l =>
+      <button key={l} className={getLang() === l ? 'on' : ''} onClick={() => setLang(l)} aria-pressed={getLang() === l} aria-label={l}>{labels[l]}</button>)}
+  </div>;
+}
+
 export default function App() {
   const [state, setState] = useState(() => store.state);
   const [tab, setTab] = useState<'tasks' | 'team' | 'feed' | 'office' | 'agents' | 'missions'>('missions');
@@ -550,6 +565,8 @@ export default function App() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [zen, setZen] = useState(false);
+  const [lightUi, setLightUi] = useState(() => getOfficeTheme() === 'light');
+  useEffect(() => { setOfficeTheme(lightUi ? 'light' : 'dark'); }, [lightUi]);
   const [, bumpOnFollowCancel] = useState(0); // pan/zoom که follow را لغو کند → یک رندر تا دکمهٔ کارت همگام شود
   const [aiConfig, setAiConfig] = useState(() => loadConfig());
   const [onboarded, setOnboarded] = useState(() => {
@@ -701,17 +718,19 @@ export default function App() {
   const editing = state.agents.find(a => a.id === editingId) ?? null;
   const workingCount = state.agents.filter(a => a.state === 'working').length;
 
-  return <div className={`app-shell ${zen ? 'zen' : ''}`}>
+  return <div className={`app-shell ${zen ? 'zen' : ''} ${lightUi ? 'light-ui' : ''}`}>
     <header className="topbar">
       <div className="brand-row">
         <img src="/icons/icon-512.png" alt="" width={30} height={30} />
-        <strong>دفتر سسِمی</strong>
-        <span className="brand-hint">شبیه‌ساز شرکت هوشمند</span>
+        <strong>{t('brand.name')}</strong>
+        <span className="brand-hint">{t('brand.tag')}</span>
       </div>
       <div className="topbar-actions">
-        <button className="ghost" onClick={() => { resetView(); }} aria-label="بازنشانی نما" title="بازنشانی نما">⟲</button>
-        <button className="ghost" onClick={() => setZen(true)} aria-label="حالت تمرکز">⛶</button>
-        <button className="ghost" onClick={() => setShowSettings(true)}>⚙️ تنظیمات AI</button>
+        <OfficeLangSwitch />
+        <button className="ghost" onClick={() => setLightUi(v => !v)} aria-label={lightUi ? 'Dark mode' : 'Light mode'} title={lightUi ? 'Dark mode' : 'Light mode'}>{lightUi ? '🌙' : '☀️'}</button>
+        <button className="ghost" onClick={() => { resetView(); }} aria-label={t('common.resetView')} title={t('common.resetView')}>⟲</button>
+        <button className="ghost" onClick={() => setZen(true)} aria-label={t('common.zen')}>⛶</button>
+        <button className="ghost" onClick={() => setShowSettings(true)}>{t('common.settings')}</button>
       </div>
     </header>
 
@@ -726,8 +745,8 @@ export default function App() {
 
     <div className="side-col">
       <nav className="tabbar">
-        {([['missions', 'مأموریت‌ها'], ['tasks', 'وظیفه'], ['team', 'تیم'], ['feed', 'فعالیت'], ['office', 'دفتر مدیر'], ['agents', 'وظایف‌ها']] as const).map(([id, label]) =>
-          <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>{label}</button>)}
+        {([['missions', 'tab.missions'], ['tasks', 'tab.task'], ['team', 'tab.team'], ['feed', 'tab.feed'], ['office', 'tab.office'], ['agents', 'tab.tasks']] as const).map(([id, key]) =>
+          <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>{t(key)}</button>)}
       </nav>
 
       <main className="panel-area">
@@ -753,17 +772,17 @@ export default function App() {
     {!onboarded && <div className="welcome-scrim" role="dialog" aria-modal="true" aria-label="خوش‌آمدگویی">
       <div className="welcome-card">
         <img src="/icons/icon-512.png" alt="" width={52} height={52} />
-        <p className="welcome-line1">دفتر زندهٔ تیم هوش مصنوعی</p>
-        <p className="welcome-line2">یک جمله بنویس — تیم AI برنامه می‌ریزد، سر کار می‌رود و نتیجه را تحویل می‌دهد. همین.</p>
+        <p className="welcome-line1">{t('welcome.title')}</p>
+        <p className="welcome-line2">{t('welcome.sub')}</p>
         <div className="welcome-chips">
-          <span>🖥 سایت و لندینگ</span><span>✍️ محتوا و کپشن</span><span>🔍 تحقیق و گزارش</span><span>🗓 برنامه‌ریزی</span>
+          <span>{t('welcome.chip1')}</span><span>{t('welcome.chip2')}</span><span>{t('welcome.chip3')}</span><span>{t('welcome.chip4')}</span>
         </div>
         <button className="primary" onClick={() => {
           try { localStorage.setItem('sesemi-office-onboarded', '1'); } catch { /* private mode */ }
           setOnboarded(true);
           setTab('missions');
-        }}>همین حالا به تیم کار بده</button>
-        <p className="welcome-hint">بدون کلید هم کار می‌کند (حالت نمایشی) · اعلان‌ها به تلگرام می‌رود · دفتر با هر کارِ انجام‌شده بزرگ‌تر می‌شود</p>
+        }}>{t('welcome.cta')}</button>
+        <p className="welcome-hint">{t('welcome.hint')}</p>
       </div>
     </div>}
   </div>;
