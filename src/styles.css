@@ -255,3 +255,24 @@ button.danger.ghost { margin-top: 14px; width: 100%; border: 1px solid #5d2e38; 
 .form-ok { color: #7ee2b8; font-size: 11.5px; margin: 8px 0 0 }
 h2 .ghost.mini { margin-inline-start: auto }
 .panel-hint a { color: #7cc7f5 }
+
+/* ---- paid orders strip (site payments verified -> office pickup) ---- */
+.paid-orders{border:1px solid rgba(200,240,108,.4);background:rgba(200,240,108,.07);border-radius:12px;padding:12px 14px;margin-bottom:14px;animation:paid-in .4s ease both}
+@keyframes paid-in{from{opacity:0;translate:0 8px}to{opacity:1;translate:0 0}}
+.paid-orders-head{font-size:11px;font-weight:800;color:var(--mint,#c8f06c);margin-bottom:8px;letter-spacing:.02em}
+.paid-order{display:flex;align-items:center;gap:10px;justify-content:space-between;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);border-radius:9px;padding:9px 11px;margin-bottom:7px}
+.paid-order-info{min-width:0}.paid-order-info strong{display:block;font-size:12px}.paid-order-info small{color:var(--muted);font:10px ui-monospace,monospace}
+.paid-order .primary.mini{flex:0 0 auto}
+.light-ui .paid-orders{border-color:#b7cf55;background:rgba(140,180,60,.08)}
+.light-ui .paid-order{background:#fff;border-color:var(--line,#d6e1e3)}
+
+/* ---- motion polish: panel switches and rows breathe, not jump ---- */
+.panel-area > .panel{animation:panel-in .32s cubic-bezier(.2,.8,.2,1) both}
+@keyframes panel-in{from{opacity:0;translate:0 10px}to{opacity:1;translate:0 0}}
+.task-row{animation:task-in .35s cubic-bezier(.2,.8,.2,1) both}
+@keyframes task-in{from{opacity:0;translate:0 12px;scale:.99}to{opacity:1;translate:0 0;scale:1}}
+.mission-card{transition:transform .25s,box-shadow .25s}
+.mission-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(0,0,0,.18)}
+.agent-row{transition:background .2s,translate .2s}
+.agent-row:hover{translate:0 -1px}
+@media(prefers-reduced-motion:reduce){.panel-area>.panel,.task-row{animation:none}.mission-card,.agent-row{transition:none}}

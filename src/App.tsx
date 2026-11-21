@@ -6,7 +6,7 @@ import { ROLE_META, TASK_LABELS, type Agent, type Role, type Task, type TaskKind
 import { isDemoMode, loadConfig, saveConfig, GEMINI_MODELS, OPENAI_COMPAT_MODELS, type AiConfig, type ProviderKind } from './ai/llm';
 import {
   adoptedKey, createMissionFromGoal, fetchMissionBoard, loadAdoptedKeys, saveAdoptedKeys,
-  type Mission, type MissionTaskStatus,
+  type Mission, type MissionTaskStatus, OUTPUT_ENDPOINT,
 } from './missions';
 
 /* ---------- small shared bits ---------- */
@@ -436,6 +436,40 @@ function MissionsPanel() {
   const [flash, setFlash] = useState('');
   const [goal, setGoal] = useState('');
   const [creating, setCreating] = useState(false);
+  // paid orders verified on the main site (agent_outputs PAY-*) — one click
+  // turns a paid order into a real mission the agents work end-to-end
+  const [paidOrders, setPaidOrders] = useState<{ id: number; missionCode: string; taskTitle: string; brief: { goal?: string; amount?: number; email?: string } | null }[]>([]);
+  const [paidBusy, setPaidBusy] = useState<string | null>(null);
+  const [paidDone, setPaidDone] = useState<Set<string>>(() => {
+    try { return new Set<string>(JSON.parse(localStorage.getItem('sesemi-office-paid-handled') || '[]')); } catch { return new Set(); }
+  });
+
+  const loadPaid = () => {
+    fetch(`${OUTPUT_ENDPOINT}?limit=40`).then(r => r.json()).then((d: { items?: { id: number; mission_code: string; task_title: string; result: string; agent_role: string }[] }) => {
+      const rows = (d.items || []).filter(row => row.mission_code.startsWith('PAY-') && row.agent_role === 'paid-order')
+        .map(row => { try { return { id: row.id, missionCode: row.mission_code, taskTitle: row.task_title, brief: JSON.parse(row.result) as { goal?: string; amount?: number; email?: string } }; } catch { return null; } })
+        .filter((row): row is NonNullable<typeof row> => row !== null && !paidDone.has(row.missionCode));
+      setPaidOrders(rows);
+    }).catch(() => { /* bridge unreachable — strip stays empty */ });
+  };
+
+  async function handToAgents(row: { missionCode: string; taskTitle: string; brief: { goal?: string; amount?: number; email?: string } | null }) {
+    const goal = row.brief?.goal || row.taskTitle;
+    setPaidBusy(row.missionCode);
+    try {
+      const { code } = await createMissionFromGoal(goal);
+      const next = new Set(paidDone); next.add(row.missionCode); setPaidDone(next);
+      try { localStorage.setItem('sesemi-office-paid-handled', JSON.stringify([...next])); } catch { /* private mode */ }
+      setPaidOrders(list => list.filter(x => x.missionCode !== row.missionCode));
+      setFlash(`🎯 سفارش ${row.missionCode} با مأموریت ${code} وارد دفتر شد — ایجنت‌ها کار را کامل انجام می‌دهند.`);
+      load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'تبدیل سفارش به مأموریت شکست خورد.');
+    } finally {
+      setPaidBusy(null);
+    }
+  }
+  useEffect(loadPaid, []);
 
   /** هدف → مأموریت واقعی (AI برنامه می‌ریزد، تلگرام خبر می‌گیرد) → همان لحظه وارد دفتر */
   async function launchGoal() {
@@ -500,6 +534,18 @@ function MissionsPanel() {
       </button>
     </h2>
     {stale && <p className="form-error" role="status">{t('missions.stale')}</p>}
+    {paidOrders.length > 0 && <div className="paid-orders">
+      <div className="paid-orders-head"><span>💰 سفارش‌های پرداخت‌شدهٔ سایت — آمادهٔ اجرا</span></div>
+      {paidOrders.map(row => <div className="paid-order" key={row.missionCode}>
+        <div className="paid-order-info">
+          <strong>{row.taskTitle}</strong>
+          <small>{row.missionCode}{row.brief?.amount ? ` · ${row.brief.amount}$` : ''}{row.brief?.email ? ` · ${row.brief.email}` : ''}</small>
+        </div>
+        <button className="primary mini" disabled={paidBusy === row.missionCode} onClick={() => void handToAgents(row)}>
+          {paidBusy === row.missionCode ? '…' : 'تیم انجام بدهد 🚀'}
+        </button>
+      </div>)}
+    </div>}
     <div className="mission-goal">
       <label className="field">{t('missions.goal')}
         <textarea value={goal} onChange={e => setGoal(e.target.value)} rows={2}

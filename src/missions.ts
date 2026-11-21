@@ -7,7 +7,7 @@
 import type { TaskKind } from './sim/agents';
 
 const N8N_WEBHOOK = 'https://mersadjy33.app.n8n.cloud/webhook';
-const OUTPUT_ENDPOINT = 'https://sesemi.pages.dev/api/agent-outputs';
+export const OUTPUT_ENDPOINT = 'https://sesemi.pages.dev/api/agent-outputs';
 
 export type MissionTaskStatus = 'done' | 'failed' | 'active' | 'queued';
 
